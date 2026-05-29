@@ -11,39 +11,30 @@ Runs on `127.0.0.1:8765`, single-user, no auth.
 
 ## Quick start (Windows)
 
-### 1. Backend deps
-
 ```powershell
-cd backend
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e ".[dev]"
+.\run.cmd
 ```
 
-### 2. Frontend build
+That's it. On first run it installs the frontend deps, builds the SPA, creates a
+Python virtualenv, installs the backend, and launches the server — then opens
+<http://127.0.0.1:8765>.
 
-```powershell
-cd ..\frontend
-npm install
-npm run build      # outputs into backend/app/static
-```
+The virtualenv and your library both live **outside the repo**, under a per-user
+`sadirano\yumi` home, so the source tree stays clean:
 
-### 3. Run
-
-```powershell
-cd ..\backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8765
-```
-
-Open <http://127.0.0.1:8765>.
+- venv → `%LOCALAPPDATA%\sadirano\yumi\.venv`
+- data → `%LOCALAPPDATA%\sadirano\yumi\favorites.sqlite`
 
 ### Dev mode (hot reload)
 
-Two terminals:
+After at least one `run.cmd` (so the external venv exists):
 
 ```powershell
+$venv = "$env:LOCALAPPDATA\sadirano\yumi\.venv\Scripts\python.exe"
+
 # terminal 1 — backend
 cd backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8765
+& $venv -m uvicorn app.main:app --reload --port 8765
 
 # terminal 2 — frontend
 cd frontend
@@ -54,7 +45,7 @@ npm run dev        # http://localhost:5173, proxies /api to 8765
 
 ```powershell
 cd backend
-.\.venv\Scripts\python.exe -m pytest
+& "$env:LOCALAPPDATA\sadirano\yumi\.venv\Scripts\python.exe" -m pytest
 ```
 
 ## Data
