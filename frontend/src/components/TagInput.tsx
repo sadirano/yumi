@@ -1,0 +1,245 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "../api/client";
+
+interface Props {
+  value: string[];
+  onChange: (next: string[]) => void;
+  placeholder?: string;
+  browsable?: boolean;
+}
+
+function TagPill({ name, onRemove }: { name: string; onRemove?: () => void }) {
+  const colon = name.indexOf(":");
+  const ns = colon > 0 ? name.slice(0, colon + 1) : null;
+  const val = colon > 0 ? name.slice(colon + 1) : name;
+  return (
+    <span className="inline-flex items-center gap-0.5 bg-zinc-800 text-zinc-200 rounded px-2 py-0.5 text-xs">
+      {ns && <span className="text-zinc-500">{ns}</span>}
+      {val}
+      {onRemove && (
+        <button type="button" onClick={onRemove} className="ml-0.5 text-zinc-500 hover:text-zinc-200">×</button>
+      )}
+    </span>
+  );
+}
+
+export function renderTagName(name: string) {
+  const colon = name.indexOf(":");
+  if (colon <= 0) return <>{name}</>;
+  return <><span className="text-zinc-500">{name.slice(0, colon + 1)}</span>{name.slice(colon + 1)}</>;
+}
+
+export default function TagInput({ value, onChange, placeholder, browsable = true }: Props) {
+  const [input, setInput] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [focused, setFocused] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [browseFilter, setBrowseFilter] = useState("");
+  const listRef = useRef<HTMLUListElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // All tags, grouped by namespace (AniList-style browse panel). Shares the
+  // ["tags"] query cache with FilterSidebar so we don't refetch.
+  const { data: allTags = [] } = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api.listTags(),
+    staleTime: 30_000,
+    enabled: browsable && browseOpen,
+  });
+
+  const grouped = useMemo(() => {
+    const needle = browseFilter.trim().toLowerCase();
+    const map: Record<string, typeof allTags> = {};
+    for (const t of allTags) {
+      if (needle && !t.name.toLowerCase().includes(needle)) continue;
+      const colon = t.name.indexOf(":");
+      const ns = colon > 0 ? t.name.slice(0, colon) : "";
+      (map[ns] ??= []).push(t);
+    }
+    for (const ns in map) {
+      map[ns].sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : 1));
+    }
+    return Object.entries(map).sort(([a], [b]) => {
+      if (a === "" && b !== "") return 1;
+      if (b === "" && a !== "") return -1;
+      return a < b ? -1 : 1;
+    });
+  }, [allTags, browseFilter]);
+
+  function toggle(name: string) {
+    if (value.includes(name)) onChange(value.filter(v => v !== name));
+    else onChange([...value, name]);
+  }
+
+  useEffect(() => {
+    let cancel = false;
+    if (!input.trim()) { setSuggestions([]); setActiveIdx(-1); return; }
+    const t = setTimeout(async () => {
+      const tags = await api.listTags(input.trim());
+      if (!cancel) {
+        setSuggestions(tags.map(t => t.name).filter(n => !value.includes(n)).slice(0, 8));
+        setActiveIdx(-1);
+      }
+    }, 100);
+    return () => { cancel = true; clearTimeout(t); };
+  }, [input, value]);
+
+  function commit(name: string) {
+    const n = name.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!n) return;
+    if (!value.includes(n)) onChange([...value, n]);
+    setInput("");
+    setSuggestions([]);
+    setActiveIdx(-1);
+  }
+
+  function remove(name: string) {
+    onChange(value.filter(v => v !== name));
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    const open = focused && suggestions.length > 0;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (open) setActiveIdx(i => (i + 1) % suggestions.length);
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      if (open) setActiveIdx(i => (i <= 0 ? suggestions.length - 1 : i - 1));
+      return;
+    }
+
+    if (e.key === "Tab") {
+      if (open) {
+        e.preventDefault();
+        commit(activeIdx >= 0 ? suggestions[activeIdx] : suggestions[0]);
+      }
+      return;
+    }
+
+    if (e.key === "Escape") {
+      setSuggestions([]);
+      setActiveIdx(-1);
+      return;
+    }
+
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      if (open && activeIdx >= 0) {
+        commit(suggestions[activeIdx]);
+      } else {
+        commit(input);
+      }
+      return;
+    }
+
+    if (e.key === "Backspace" && !input && value.length) {
+      remove(value[value.length - 1]);
+    }
+  }
+
+  // Scroll the highlighted item into view
+  useEffect(() => {
+    if (activeIdx < 0 || !listRef.current) return;
+    const item = listRef.current.children[activeIdx] as HTMLElement | undefined;
+    item?.scrollIntoView({ block: "nearest" });
+  }, [activeIdx]);
+
+  const showDropdown = focused && suggestions.length > 0;
+
+  return (
+    <div ref={wrapRef} className="relative">
+      <div className="flex flex-wrap gap-1.5 p-2 bg-zinc-900 border border-zinc-800 rounded">
+        {value.map(t => (
+          <TagPill key={t} name={t} onRemove={() => remove(t)} />
+        ))}
+        <input
+          className="flex-1 min-w-32 bg-transparent outline-none text-sm"
+          value={input}
+          placeholder={placeholder ?? "add tag… (namespace:value)"}
+          onChange={e => setInput(e.target.value)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          onKeyDown={handleKeyDown}
+        />
+        {browsable && (
+          <button
+            type="button"
+            onClick={() => setBrowseOpen(o => !o)}
+            title="Browse all tags"
+            className={`shrink-0 px-1.5 rounded text-xs border ${
+              browseOpen
+                ? "bg-zinc-700 border-zinc-600 text-zinc-100"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+            }`}
+          >
+            ⊞
+          </button>
+        )}
+      </div>
+
+      {browsable && browseOpen && (
+        <div className="mt-1.5 bg-zinc-900 border border-zinc-800 rounded p-2">
+          <input
+            value={browseFilter}
+            onChange={e => setBrowseFilter(e.target.value)}
+            placeholder="filter tags…"
+            className="w-full mb-2 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-xs outline-none"
+          />
+          <div className="max-h-72 overflow-y-auto pr-0.5 space-y-2.5">
+            {grouped.length === 0 && (
+              <div className="text-xs text-zinc-500">No tags found.</div>
+            )}
+            {grouped.map(([ns, tags]) => (
+              <div key={ns || "__other__"}>
+                <div className="text-[10px] text-zinc-500 mb-1 uppercase tracking-wide">
+                  {ns || "other"}
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {tags.map(({ name, count }) => {
+                    const val = ns ? name.slice(ns.length + 1) : name;
+                    const active = value.includes(name);
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        onClick={() => toggle(name)}
+                        className={`px-2 py-0.5 rounded text-xs transition ${
+                          active
+                            ? "bg-blue-600 text-white"
+                            : "bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700"
+                        }`}
+                      >
+                        {val}
+                        <span className="ml-1 text-[10px] opacity-60">{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {showDropdown && (
+        <ul ref={listRef} className="absolute z-10 mt-1 w-full bg-zinc-900 border border-zinc-800 rounded shadow-lg">
+          {suggestions.map((s, i) => (
+            <li
+              key={s}
+              className={`px-2 py-1 text-sm cursor-pointer ${i === activeIdx ? "bg-zinc-700 text-white" : "hover:bg-zinc-800"}`}
+              onMouseDown={() => commit(s)}
+              onMouseEnter={() => setActiveIdx(i)}
+            >
+              {renderTagName(s)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}

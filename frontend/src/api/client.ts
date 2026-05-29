@@ -1,0 +1,185 @@
+export type ItemKind = "youtube" | "url" | "file" | "note";
+export type ItemStatus = "to-watch" | "watching" | "watched" | "archived";
+
+export interface Tag { id: number; name: string; count: number }
+
+export interface Item {
+  id: number;
+  kind: ItemKind;
+  url: string | null;
+  file_path: string | null;
+  title: string;
+  description: string;
+  notes_md: string;
+  thumbnail_url: string | null;
+  channel: string;
+  duration_sec: number | null;
+  published_at: string | null;
+  source: string;
+  status: ItemStatus;
+  needs_enrichment: boolean;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+  tags: Tag[];
+}
+
+export interface Collection {
+  id: number;
+  name: string;
+  notes_md: string;
+  created_at: string;
+  updated_at: string;
+  item_count: number;
+}
+
+export interface CollectionDetail extends Collection {
+  items: Item[];
+}
+
+export interface Revision {
+  id: number;
+  item_id: number;
+  title: string;
+  notes_md: string;
+  tags_json: string;
+  source: string;
+  status: string;
+  created_at: string;
+}
+
+export interface ItemCreate {
+  url?: string;
+  file_path?: string;
+  note_title?: string;
+  note_body?: string;
+  tags?: string[];
+  status?: ItemStatus;
+  source?: string;
+  notes_md?: string;
+}
+
+export interface ItemPatch {
+  title?: string;
+  notes_md?: string;
+  status?: ItemStatus;
+  source?: string;
+  tags?: string[];
+  description?: string;
+  thumbnail_url?: string | null;
+}
+
+export interface Space {
+  id: number;
+  name: string;
+  namespaces: string[];
+  tags: string[];
+  created_at: string;
+}
+
+export interface ItemQuery {
+  q?: string;
+  tags?: string[];
+  tag_op?: "AND" | "OR";
+  exclude_tags?: string[];
+  status_in?: ItemStatus[];
+  sort?: "recent" | "random" | "duration" | "title";
+  limit?: number;
+  offset?: number;
+  space_id?: number;
+}
+
+const BASE = "/api";
+
+export class ApiError extends Error {
+  constructor(public status: number, public body: any) {
+    super(`API ${status}`);
+  }
+}
+
+async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(BASE + path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    let parsed: any = null;
+    try { parsed = await r.json(); } catch { /* noop */ }
+    throw new ApiError(r.status, parsed);
+  }
+  if (r.status === 204) return undefined as T;
+  return (await r.json()) as T;
+}
+
+function qs(q: ItemQuery): string {
+  const p = new URLSearchParams();
+  if (q.q) p.set("q", q.q);
+  if (q.tags?.length) p.set("tags", q.tags.join(","));
+  if (q.tag_op) p.set("tag_op", q.tag_op);
+  if (q.exclude_tags?.length) p.set("exclude_tags", q.exclude_tags.join(","));
+  if (q.status_in?.length) p.set("status_in", q.status_in.join(","));
+  if (q.sort) p.set("sort", q.sort);
+  if (q.limit != null) p.set("limit", String(q.limit));
+  if (q.offset != null) p.set("offset", String(q.offset));
+  if (q.space_id != null) p.set("space_id", String(q.space_id));
+  const s = p.toString();
+  return s ? "?" + s : "";
+}
+
+export const api = {
+  listItems: (q: ItemQuery = {}) => req<Item[]>("GET", `/items${qs(q)}`),
+  getItem: (id: number) => req<Item>("GET", `/items/${id}`),
+  createItem: (body: ItemCreate) => req<Item>("POST", `/items`, body),
+  patchItem: (id: number, body: ItemPatch, opts?: { snapshot?: boolean }) =>
+    req<Item>("PATCH", `/items/${id}${opts?.snapshot === false ? "?snapshot=false" : ""}`, body),
+  deleteItem: (id: number) => req<void>("DELETE", `/items/${id}`),
+  restoreItem: (id: number) => req<Item>("POST", `/items/${id}/restore`),
+  purgeItem: (id: number) => req<void>("DELETE", `/items/${id}/purge`),
+  refreshItem: (id: number) => req<Item>("POST", `/items/${id}/refresh`),
+
+  listTags: (prefix?: string) =>
+    req<Tag[]>("GET", `/tags${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""}`),
+  deleteTag: (name: string) => req<void>("DELETE", `/tags/${encodeURIComponent(name)}`),
+
+  listCollections: () => req<Collection[]>("GET", `/collections`),
+  getCollection: (id: number) => req<CollectionDetail>("GET", `/collections/${id}`),
+  createCollection: (name: string) => req<Collection>("POST", `/collections`, { name, notes_md: "" }),
+  patchCollection: (id: number, body: { name: string; notes_md: string }) =>
+    req<Collection>("PATCH", `/collections/${id}`, body),
+  deleteCollection: (id: number) => req<void>("DELETE", `/collections/${id}`),
+  addToCollection: (cid: number, item_id: number, after_id?: number | null) =>
+    req<void>("POST", `/collections/${cid}/items`, { item_id, after_id }),
+  removeFromCollection: (cid: number, item_id: number) =>
+    req<void>("DELETE", `/collections/${cid}/items/${item_id}`),
+  moveInCollection: (cid: number, item_id: number, after_id: number | null) =>
+    req<void>("PATCH", `/collections/${cid}/items/${item_id}`, { after_id }),
+
+  listTrash: () => req<Item[]>("GET", `/trash`),
+
+  listRevisions: (itemId: number) => req<Revision[]>("GET", `/items/${itemId}/revisions`),
+  restoreRevision: (itemId: number, revId: number) => req<Item>("POST", `/items/${itemId}/revisions/${revId}/restore`),
+
+  listSpaces: () => req<Space[]>("GET", `/spaces`),
+  createSpace: (name: string, namespaces: string[], tags: string[]) => req<Space>("POST", `/spaces`, { name, namespaces, tags }),
+  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[] }) => req<Space>("PATCH", `/spaces/${id}`, data),
+  deleteSpace: (id: number) => req<void>("DELETE", `/spaces/${id}`),
+};
+
+
+/** The external link an item points at, or null if it has none (e.g. notes).
+ *  file items become a file:/// URL; browsers may block opening these. */
+export function itemLink(item: Item): string | null {
+  if (item.url) return item.url;
+  if (item.file_path) return encodeURI("file:///" + item.file_path.replace(/\\/g, "/"));
+  return null;
+}
+
+export function fmtDuration(sec: number | null): string {
+  if (!sec) return "";
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = sec % 60;
+  if (h) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
