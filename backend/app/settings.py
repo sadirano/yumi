@@ -9,16 +9,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_data_dir() -> Path:
-    """Per-user data directory under a shared 'sadirano' domain folder.
+    """Per-user data directory under a backup-oriented 'sadirano-data' domain.
 
-    Windows: %LOCALAPPDATA%\\sadirano\\yumi
-    macOS:   ~/Library/Application Support/sadirano/yumi
-    Linux:   $XDG_DATA_HOME/sadirano/yumi  (or ~/.local/share/sadirano/yumi)
+    Windows: %LOCALAPPDATA%\\sadirano-data\\yumi
+    macOS:   ~/Library/Application Support/sadirano-data/yumi
+    Linux:   $XDG_DATA_HOME/sadirano-data/yumi  (or ~/.local/share/sadirano-data/yumi)
 
-    Keeps the user's library out of the repo so the source tree stays clean and
-    nothing personal is ever committed. Override with YUMI_DATA_DIR.
+    The disposable venv lives under 'sadirano/yumi' (created by run.cmd); only
+    backup-worthy state — the SQLite library — lives here under 'sadirano-data'
+    so a backup tool can target that domain and skip the recreatable venv.
+    Keeps the user's library out of the repo. Override with YUMI_DATA_DIR.
     """
-    domain = "sadirano"
+    domain = "sadirano-data"
     app = "yumi"
     if sys.platform == "win32":
         base = os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")

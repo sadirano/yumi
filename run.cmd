@@ -2,7 +2,8 @@
 setlocal
 cd /d "%~dp0"
 
-REM --- Resolve the per-user "sadirano\yumi" home (keeps venv + data OUT of the repo) ---
+REM --- Resolve the per-user "sadirano\yumi" home for the venv (kept OUT of the repo).
+REM     The backup-worthy library lives separately under sadirano-data\yumi (see settings.py). ---
 set "YUMI_BASE=%LOCALAPPDATA%"
 if "%YUMI_BASE%"=="" set "YUMI_BASE=%USERPROFILE%\AppData\Local"
 set "YUMI_HOME=%YUMI_BASE%\sadirano\yumi"
