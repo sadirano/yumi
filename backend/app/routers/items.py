@@ -29,7 +29,6 @@ def _snapshot(db: Session, item: Item) -> None:
         last.title == item.title
         and last.notes_md == item.notes_md
         and last.tags_json == tags_json
-        and last.source == item.source
         and last.status == item.status
         and last.progress == item.progress
         and last.total == item.total
@@ -40,7 +39,6 @@ def _snapshot(db: Session, item: Item) -> None:
         title=item.title,
         notes_md=item.notes_md,
         tags_json=tags_json,
-        source=item.source,
         status=item.status,
         progress=item.progress,
         total=item.total,
@@ -280,7 +278,6 @@ def restore_revision(item_id: int, rev_id: int, db: Session = Depends(get_sessio
     _snapshot(db, item)
     item.title = rev.title
     item.notes_md = rev.notes_md
-    item.source = rev.source
     item.status = rev.status  # type: ignore[assignment]
     item.progress = rev.progress
     item.total = rev.total

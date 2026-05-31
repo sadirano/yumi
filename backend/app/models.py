@@ -27,10 +27,6 @@ class Item(Base):
     channel: Mapped[str] = mapped_column(Text, nullable=False, default="")
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     published_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
-    # Retired field: no longer exposed by the API or UI. The column is kept dead
-    # so inserts on upgraded DBs don't hit the NOT NULL constraint; nothing reads
-    # it. Drop it later if a clean migration is wanted.
-    source: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="plan")
     # Serialized-media progress. `progress` = episodes/chapters consumed;
     # `total` = the work's length, or NULL when ongoing/unknown. "Finished" is
@@ -85,7 +81,6 @@ class ItemRevision(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
     notes_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
     tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    source: Mapped[str] = mapped_column(Text, nullable=False, default="")  # retired; see Item.source
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="plan")
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total: Mapped[int | None] = mapped_column(Integer, nullable=True)

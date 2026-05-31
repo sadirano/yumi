@@ -85,6 +85,14 @@ _COLUMN_MIGRATIONS = [
     ("spaces", "labels_json", "TEXT"),
 ]
 
+# Columns retired from the model and dropped from upgraded DBs. SQLite 3.35+
+# supports ALTER TABLE DROP COLUMN; each is guarded by a PRAGMA check so this is
+# idempotent and a no-op once the column is gone (or on a fresh install).
+_DROP_COLUMNS = [
+    ("items", "source"),
+    ("item_revisions", "source"),
+]
+
 # One-time rename of the watch-specific status names to generic ones. A clean
 # 1:1 map, so this is idempotent: after the first run no rows carry the old
 # values, and new data only ever uses the new ones, so re-running is a no-op.
@@ -131,6 +139,10 @@ def init_db() -> None:
             existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+        for table, col in _DROP_COLUMNS:
+            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            if col in existing:
+                conn.execute(text(f"ALTER TABLE {table} DROP COLUMN {col}"))
         _migrate_statuses(conn)
         for stmt in FTS_SETUP_SQL:
             conn.execute(text(stmt))

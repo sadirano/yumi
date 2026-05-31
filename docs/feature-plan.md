@@ -10,8 +10,9 @@ Implemented on branch `feature/status-labels-metrics` (uncommitted). Gates green
 
 - **AniList (#3)** was already present in the codebase (`anilist_id` field, link-out,
   related-links) — no new work needed beyond scrapping `source`.
-- **`source`** is removed from the API surface and UI but left as a **dead DB column**
-  (kept `NOT NULL`, never read) to avoid a table rebuild. Can be dropped later if wanted.
+- **`source`** is removed from the API surface and UI. The DB column was later dropped
+  via an idempotent `ALTER TABLE ... DROP COLUMN` migration (SQLite 3.35+) on both
+  `items` and `item_revisions`.
 - New shared `frontend/src/lib/status.ts` centralizes the status maps + `statusLabel`.
 - Access endpoint returns `204` and uses a raw SQL `UPDATE` so it never bumps
   `updated_at` (opening a link must not re-sort the library).
