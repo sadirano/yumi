@@ -11,7 +11,7 @@ def test_add_youtube_and_dedupe(client):
     r = client.post("/api/items", json={
         "url": "https://youtu.be/dQw4w9WgXcQ",
         "tags": ["music", "Classic"],
-        "status": "to-watch",
+        "status": "plan",
     })
     assert r.status_code == 201, r.text
     body = r.json()
@@ -34,11 +34,11 @@ def test_patch_tags_and_notes(client):
     r = client.patch(f"/api/items/{item['id']}", json={
         "notes_md": "watched on a rickroll bender",
         "tags": ["rickroll", "lol"],
-        "status": "watched",
+        "status": "completed",
     })
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "watched"
+    assert body["status"] == "completed"
     assert "rickroll" in body["notes_md"]
     assert sorted(t["name"] for t in body["tags"]) == ["lol", "rickroll"]
 
@@ -199,6 +199,66 @@ def test_anilist_and_related_links(client):
     # Clearing the id; related_links untouched when omitted from the patch
     assert client.patch(f"/api/items/{item['id']}", json={"anilist_id": None}).json()["anilist_id"] is None
     assert len(client.get(f"/api/items/{item['id']}").json()["related_links"]) == 2
+
+
+def test_record_access(client):
+    item = client.post("/api/items", json={"url": "https://youtu.be/acc1"}).json()
+    iid = item["id"]
+    assert item["access_count"] == 0 and item["last_accessed_at"] is None
+
+    # Two explicit opens bump the counter and stamp last_accessed_at...
+    assert client.post(f"/api/items/{iid}/access").status_code == 204
+    assert client.post(f"/api/items/{iid}/access").status_code == 204
+    after = client.get(f"/api/items/{iid}").json()
+    assert after["access_count"] == 2
+    assert after["last_accessed_at"] is not None
+    # ...without disturbing updated_at (opening a link must not re-sort the library).
+    assert after["updated_at"] == item["updated_at"]
+
+    # Unknown / trashed items 404.
+    assert client.post("/api/items/999999/access").status_code == 404
+
+
+def test_space_labels(client):
+    # Labels round-trip, and an empty map clears back to canonical defaults.
+    labels = {"plan": "to read", "in-progress": "reading", "completed": "read"}
+    s = client.post("/api/spaces", json={"name": "Books", "labels": labels}).json()
+    assert s["labels"] == labels
+
+    plain = client.post("/api/spaces", json={"name": "Plain"}).json()
+    assert plain["labels"] is None
+
+    cleared = client.patch(f"/api/spaces/{s['id']}", json={"labels": {}}).json()
+    assert cleared["labels"] is None
+
+
+def test_status_backfill(client):
+    """The one-time rename must fix existing on-disk data: item rows, revision
+    rows, and the status_in stored inside saved filters' params_json."""
+    from sqlalchemy import text
+    from app.db import engine, init_db
+
+    item = client.post("/api/items", json={"note_title": "Legacy"}).json()
+    client.patch(f"/api/items/{item['id']}", json={"notes_md": "v2"})  # makes a revision
+    space = client.post("/api/spaces", json={"name": "S"}).json()
+    f = client.post(f"/api/spaces/{space['id']}/filters",
+                    json={"name": "f", "params": {"status_in": "plan,completed"}}).json()
+
+    # Rewind to the pre-rename representation the API can no longer produce.
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE items SET status = 'to-watch' WHERE id = :id"), {"id": item["id"]})
+        conn.execute(text("UPDATE item_revisions SET status = 'watched'"))
+        conn.execute(
+            text("UPDATE space_filters SET params_json = :p WHERE id = :id"),
+            {"p": '{"status_in": "to-watch,watched"}', "id": f["id"]},
+        )
+
+    init_db()  # idempotent backfill
+
+    assert client.get(f"/api/items/{item['id']}").json()["status"] == "plan"
+    assert client.get(f"/api/items/{item['id']}/revisions").json()[0]["status"] == "completed"
+    listed = client.get(f"/api/spaces/{space['id']}/filters").json()
+    assert listed[0]["params"]["status_in"] == "plan,completed"
 
 
 def test_freeform_note(client):

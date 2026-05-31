@@ -80,7 +80,46 @@ _COLUMN_MIGRATIONS = [
     ("item_revisions", "total", "INTEGER"),
     ("items", "anilist_id", "INTEGER"),
     ("items", "related_links_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ("items", "access_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("items", "last_accessed_at", "TEXT"),
+    ("spaces", "labels_json", "TEXT"),
 ]
+
+# One-time rename of the watch-specific status names to generic ones. A clean
+# 1:1 map, so this is idempotent: after the first run no rows carry the old
+# values, and new data only ever uses the new ones, so re-running is a no-op.
+_STATUS_RENAME = {"to-watch": "plan", "watching": "in-progress", "watched": "completed"}
+
+
+def _migrate_statuses(conn) -> None:
+    for old, new in _STATUS_RENAME.items():
+        conn.execute(
+            text("UPDATE items SET status = :new WHERE status = :old"),
+            {"new": new, "old": old},
+        )
+        conn.execute(
+            text("UPDATE item_revisions SET status = :new WHERE status = :old"),
+            {"new": new, "old": old},
+        )
+    # Saved filters store status_in as a comma-joined string inside params_json;
+    # rewrite each so applying an old filter doesn't silently match nothing.
+    import json
+
+    for fid, pj in conn.execute(text("SELECT id, params_json FROM space_filters")).all():
+        try:
+            params = json.loads(pj or "{}")
+        except (ValueError, TypeError):
+            continue
+        si = params.get("status_in")
+        if not si:
+            continue
+        mapped = ",".join(_STATUS_RENAME.get(s, s) for s in si.split(","))
+        if mapped != si:
+            params["status_in"] = mapped
+            conn.execute(
+                text("UPDATE space_filters SET params_json = :p WHERE id = :id"),
+                {"p": json.dumps(params), "id": fid},
+            )
 
 
 def init_db() -> None:
@@ -92,6 +131,7 @@ def init_db() -> None:
             existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
             if col not in existing:
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
+        _migrate_statuses(conn)
         for stmt in FTS_SETUP_SQL:
             conn.execute(text(stmt))
 

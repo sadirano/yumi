@@ -4,7 +4,7 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import delete as sa_delete, func, select
+from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 
 from ..crud import find_live_by_path, find_live_by_url, get_or_create_tags, normalize_tag, set_item_tags
@@ -83,7 +83,6 @@ async def create_item(payload: ItemCreate, db: Session = Depends(get_session)):
             published_at=enr.published_at,
             notes_md=payload.notes_md,
             status=payload.status,
-            source=payload.source,
             needs_enrichment=enr.needs_enrichment,
         )
     elif payload.file_path:
@@ -96,7 +95,6 @@ async def create_item(payload: ItemCreate, db: Session = Depends(get_session)):
             title=payload.note_title or payload.file_path.rsplit("/", 1)[-1].rsplit("\\", 1)[-1],
             notes_md=payload.notes_md,
             status=payload.status,
-            source=payload.source,
         )
     else:
         item = Item(
@@ -104,7 +102,6 @@ async def create_item(payload: ItemCreate, db: Session = Depends(get_session)):
             title=payload.note_title or "(untitled note)",
             notes_md=payload.notes_md or (payload.note_body or ""),
             status=payload.status,
-            source=payload.source,
         )
 
     db.add(item)
@@ -157,7 +154,6 @@ def list_items(
             stmt = stmt.where(Item.status.in_(statuses))
 
     if q:
-        from sqlalchemy import text
         sub = text(
             "SELECT rowid FROM items_fts WHERE items_fts MATCH :q"
         ).bindparams(q=_fts_query(q))
@@ -215,6 +211,23 @@ def get_item(item_id: int, db: Session = Depends(get_session)):
     if not item:
         raise HTTPException(404, "not found")
     return item
+
+
+@router.post("/{item_id}/access", status_code=204)
+def record_access(item_id: int, db: Session = Depends(get_session)):
+    """Count an explicit open-the-resource click. Raw UPDATE on purpose: bumping
+    these via the ORM would trip Item.updated_at's onupdate and re-sort the
+    library just because a link was opened."""
+    res = db.execute(
+        text(
+            "UPDATE items SET access_count = access_count + 1, last_accessed_at = :now "
+            "WHERE id = :id AND deleted_at IS NULL"
+        ),
+        {"now": utcnow_iso(), "id": item_id},
+    )
+    if not res.rowcount:
+        raise HTTPException(404, "not found")
+    db.commit()
 
 
 @router.patch("/{item_id}", response_model=ItemOut)

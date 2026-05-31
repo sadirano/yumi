@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 ItemKind = Literal["youtube", "url", "file", "note"]
-ItemStatus = Literal["to-watch", "watching", "watched", "archived"]
+ItemStatus = Literal["plan", "in-progress", "completed", "archived"]
 
 
 class TagOut(BaseModel):
@@ -29,8 +29,7 @@ class ItemBase(BaseModel):
     channel: str = ""
     duration_sec: Optional[int] = None
     published_at: Optional[str] = None
-    source: str = ""
-    status: ItemStatus = "to-watch"
+    status: ItemStatus = "plan"
     progress: int = 0
     total: Optional[int] = None
     anilist_id: Optional[int] = None
@@ -44,6 +43,8 @@ class ItemOut(ItemBase):
     url: Optional[str] = None
     file_path: Optional[str] = None
     needs_enrichment: bool = False
+    access_count: int = 0
+    last_accessed_at: Optional[str] = None
     deleted_at: Optional[str] = None
     created_at: str
     updated_at: str
@@ -56,8 +57,7 @@ class ItemCreate(BaseModel):
     note_title: Optional[str] = None
     note_body: Optional[str] = None
     tags: list[str] = Field(default_factory=list)
-    status: ItemStatus = "to-watch"
-    source: str = ""
+    status: ItemStatus = "plan"
     notes_md: str = ""
 
 
@@ -65,7 +65,6 @@ class ItemPatch(BaseModel):
     title: Optional[str] = None
     notes_md: Optional[str] = None
     status: Optional[ItemStatus] = None
-    source: Optional[str] = None
     tags: Optional[list[str]] = None
     description: Optional[str] = None
     thumbnail_url: Optional[str] = None
@@ -82,7 +81,6 @@ class RevisionOut(BaseModel):
     title: str
     notes_md: str
     tags_json: str
-    source: str
     status: str
     created_at: str
 
@@ -93,6 +91,9 @@ class SpaceOut(BaseModel):
     name: str
     namespaces: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    # Per-Space display labels overriding the 3 active statuses (plan,
+    # in-progress, completed). `archived` stays fixed; null = canonical defaults.
+    labels: Optional[dict[str, str]] = None
     created_at: str
 
 
@@ -100,12 +101,14 @@ class SpaceCreate(BaseModel):
     name: str
     namespaces: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    labels: Optional[dict[str, str]] = None
 
 
 class SpacePatch(BaseModel):
     name: Optional[str] = None
     namespaces: Optional[list[str]] = None
     tags: Optional[list[str]] = None
+    labels: Optional[dict[str, str]] = None
 
 
 class DuplicateError(BaseModel):

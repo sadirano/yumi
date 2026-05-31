@@ -27,8 +27,11 @@ class Item(Base):
     channel: Mapped[str] = mapped_column(Text, nullable=False, default="")
     duration_sec: Mapped[int | None] = mapped_column(Integer, nullable=True)
     published_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Retired field: no longer exposed by the API or UI. The column is kept dead
+    # so inserts on upgraded DBs don't hit the NOT NULL constraint; nothing reads
+    # it. Drop it later if a clean migration is wanted.
     source: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="to-watch")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="plan")
     # Serialized-media progress. `progress` = episodes/chapters consumed;
     # `total` = the work's length, or NULL when ongoing/unknown. "Finished" is
     # derived (total is not None and progress >= total), never stored.
@@ -39,6 +42,10 @@ class Item(Base):
     anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     related_links_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     needs_enrichment: Mapped[bool] = mapped_column(default=False)
+    # Usage metrics: bumped only by an explicit open-the-resource click (see the
+    # /access endpoint), never by passive reads. last_accessed_at is ISO or NULL.
+    access_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_accessed_at: Mapped[str | None] = mapped_column(String(40), nullable=True)
     deleted_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
     updated_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso, onupdate=utcnow_iso)
@@ -78,8 +85,8 @@ class ItemRevision(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False, default="")
     notes_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
     tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
-    source: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="to-watch")
+    source: Mapped[str] = mapped_column(Text, nullable=False, default="")  # retired; see Item.source
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="plan")
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), nullable=False, default=utcnow_iso)
@@ -92,6 +99,9 @@ class Space(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     namespaces_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     tags_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # JSON map of canonical status -> custom display label for this Space's 3
+    # active states (plan/in-progress/completed). NULL = use canonical defaults.
+    labels_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
 
 

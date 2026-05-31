@@ -19,6 +19,7 @@ def _out(s: Space) -> SpaceOut:
         name=s.name,
         namespaces=json.loads(s.namespaces_json),
         tags=json.loads(s.tags_json),
+        labels=json.loads(s.labels_json) if s.labels_json else None,
         created_at=s.created_at,
     )
 
@@ -34,6 +35,7 @@ def create_space(payload: SpaceCreate, db: Session = Depends(get_session)):
         name=payload.name.strip(),
         namespaces_json=json.dumps(sorted(payload.namespaces)),
         tags_json=json.dumps(sorted(payload.tags)),
+        labels_json=json.dumps(payload.labels) if payload.labels else None,
     )
     db.add(s)
     db.commit()
@@ -52,6 +54,9 @@ def update_space(space_id: int, payload: SpacePatch, db: Session = Depends(get_s
         s.namespaces_json = json.dumps(sorted(payload.namespaces))
     if payload.tags is not None:
         s.tags_json = json.dumps(sorted(payload.tags))
+    if payload.labels is not None:
+        # Empty dict clears back to canonical defaults.
+        s.labels_json = json.dumps(payload.labels) if payload.labels else None
     db.commit()
     db.refresh(s)
     return _out(s)
