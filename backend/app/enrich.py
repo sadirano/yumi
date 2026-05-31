@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
+import os
 import re
+import shutil
 import socket
+import subprocess
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 
@@ -100,7 +106,49 @@ def is_youtube(url: str) -> bool:
     return (urlparse(url).hostname or "") in YOUTUBE_HOSTS
 
 
-def _ytdlp_metadata(url: str) -> dict | None:
+def _ytdlp_exe() -> str | None:
+    """Locate a yt-dlp executable: explicit override, then PATH (Scoop shim)."""
+    explicit = os.environ.get("YUMI_YTDLP_EXE")
+    if explicit and Path(explicit).exists():
+        return explicit
+    return shutil.which("yt-dlp")
+
+
+def _ytdlp_via_exe(url: str) -> dict | None:
+    """Fetch metadata by shelling out to yt-dlp.exe (`-J` = dump single JSON).
+
+    This is the path used by the frozen build, which excludes the yt-dlp library
+    to stay small and relies on a yt-dlp.exe declared as a Scoop dependency. The
+    `-J` info dict carries the same keys the library's extract_info() returns.
+    """
+    exe = _ytdlp_exe()
+    if not exe:
+        return None
+    cmd = [
+        exe, "-J", "--skip-download", "--no-playlist", "--no-warnings",
+        "--socket-timeout", str(int(settings.enrichment_timeout_sec)), url,
+    ]
+    # CREATE_NO_WINDOW keeps a console from flashing when the server runs windowed.
+    creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=settings.enrichment_timeout_sec + 5,
+            creationflags=creationflags,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _ytdlp_via_lib(url: str) -> dict | None:
     try:
         from yt_dlp import YoutubeDL
     except Exception:
@@ -118,6 +166,19 @@ def _ytdlp_metadata(url: str) -> dict | None:
             return ydl.extract_info(url, download=False)
     except Exception:
         return None
+
+
+def _ytdlp_metadata(url: str) -> dict | None:
+    """Resolve YouTube metadata via the library (dev) or yt-dlp.exe (frozen).
+
+    The frozen build has no yt-dlp library, so it must use the exe; setting
+    YUMI_YTDLP_EXE also forces the exe path so it can be exercised in dev before
+    it ships inside an exe. Either way we fall back to the other source.
+    """
+    prefer_exe = getattr(sys, "frozen", False) or bool(os.environ.get("YUMI_YTDLP_EXE"))
+    if prefer_exe:
+        return _ytdlp_via_exe(url) or _ytdlp_via_lib(url)
+    return _ytdlp_via_lib(url) or _ytdlp_via_exe(url)
 
 
 async def enrich_youtube(url: str) -> Enrichment:
