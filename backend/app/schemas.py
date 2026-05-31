@@ -26,6 +26,8 @@ class ItemBase(BaseModel):
     published_at: Optional[str] = None
     source: str = ""
     status: ItemStatus = "to-watch"
+    progress: int = 0
+    total: Optional[int] = None
 
 
 class ItemOut(ItemBase):
@@ -60,6 +62,8 @@ class ItemPatch(BaseModel):
     tags: Optional[list[str]] = None
     description: Optional[str] = None
     thumbnail_url: Optional[str] = None
+    progress: Optional[int] = None
+    total: Optional[int] = None
 
 
 class RevisionOut(BaseModel):

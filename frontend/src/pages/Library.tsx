@@ -78,6 +78,14 @@ export default function Library() {
     },
   });
 
+  // Grid +1 is triage too: snapshot:false so bumping an episode count doesn't
+  // spam history (deliberate edits in the detail view do snapshot).
+  const setProgress = useMutation({
+    mutationFn: ({ id, progress }: { id: number; progress: number }) =>
+      api.patchItem(id, { progress }, { snapshot: false }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["items"] }),
+  });
+
   const gridClass = {
     normal: "grid gap-3 grid-cols-[repeat(auto-fill,minmax(220px,1fr))]",
     big: "grid gap-4 grid-cols-[repeat(auto-fill,minmax(340px,1fr))]",
@@ -145,6 +153,7 @@ export default function Library() {
                   onDelete={(id) => del.mutate(id)}
                   onToggleWatched={(it) => toggleWatched.mutate(it)}
                   onEditTags={(it, tags) => editTags.mutate({ id: it.id, tags })}
+                  onSetProgress={(it, progress) => setProgress.mutate({ id: it.id, progress })}
                 />
               ))}
             </div>

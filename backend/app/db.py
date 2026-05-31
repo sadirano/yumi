@@ -69,11 +69,27 @@ FTS_SETUP_SQL = [
 ]
 
 
+# Columns added to existing tables after their initial release. create_all() only
+# creates missing tables, never alters existing ones, so a fresh install gets these
+# from the model while an upgraded DB needs the ADD COLUMN. SQLite ADD COLUMN is
+# cheap and each is guarded by a PRAGMA check, so this is safe to run every startup.
+_COLUMN_MIGRATIONS = [
+    ("items", "progress", "INTEGER NOT NULL DEFAULT 0"),
+    ("items", "total", "INTEGER"),
+    ("item_revisions", "progress", "INTEGER NOT NULL DEFAULT 0"),
+    ("item_revisions", "total", "INTEGER"),
+]
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  ensure models are imported
 
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
+        for table, col, ddl in _COLUMN_MIGRATIONS:
+            existing = {row[1] for row in conn.execute(text(f"PRAGMA table_info({table})"))}
+            if col not in existing:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}"))
         for stmt in FTS_SETUP_SQL:
             conn.execute(text(stmt))
 

@@ -31,6 +31,8 @@ def _snapshot(db: Session, item: Item) -> None:
         and last.tags_json == tags_json
         and last.source == item.source
         and last.status == item.status
+        and last.progress == item.progress
+        and last.total == item.total
     ):
         return
     db.add(ItemRevision(
@@ -40,6 +42,8 @@ def _snapshot(db: Session, item: Item) -> None:
         tags_json=tags_json,
         source=item.source,
         status=item.status,
+        progress=item.progress,
+        total=item.total,
     ))
     db.flush()
     count = db.scalar(
@@ -261,6 +265,8 @@ def restore_revision(item_id: int, rev_id: int, db: Session = Depends(get_sessio
     item.notes_md = rev.notes_md
     item.source = rev.source
     item.status = rev.status  # type: ignore[assignment]
+    item.progress = rev.progress
+    item.total = rev.total
     item.updated_at = utcnow_iso()
     set_item_tags(db, item, json.loads(rev.tags_json))
     db.commit()

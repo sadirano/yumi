@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { fmtDuration, Item, itemLink } from "../api/client";
+import { isSerialized } from "../lib/serialized";
 import TagInput, { renderTagName } from "./TagInput";
 
 export type Layout = "normal" | "big" | "detailed";
@@ -11,6 +12,33 @@ interface Props {
   onDelete?: (id: number) => void;
   onToggleWatched?: (item: Item) => void;
   onEditTags?: (item: Item, tags: string[]) => void;
+  onSetProgress?: (item: Item, progress: number) => void;
+}
+
+// "Finished" is derived, never stored: a bounded series whose progress caught up.
+const isFinished = (i: Item) => i.total != null && i.progress >= i.total;
+
+// Rendered only for serialized items (decided by tags, see isSerialized). An
+// ongoing series with no known total reads "40 / ?"; bounded ones get a bar.
+function ProgressBadge({ item }: { item: Item }) {
+  const finished = isFinished(item);
+  const label = item.total != null ? `${item.progress} / ${item.total}` : `${item.progress} / ?`;
+  const pct = item.total ? Math.min(100, Math.round((item.progress / item.total) * 100)) : 0;
+  return (
+    <div className="mt-1">
+      <div className={`text-xs ${finished ? "text-emerald-400" : "text-zinc-300"}`}>
+        {finished ? "✓ " : ""}{label}
+      </div>
+      {item.total != null && (
+        <div className="mt-0.5 h-1 rounded bg-zinc-800 overflow-hidden">
+          <div
+            className={`h-full ${finished ? "bg-emerald-500" : "bg-blue-500"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
+    </div>
+  );
 }
 
 const statusBadge: Record<string, string> = {
@@ -78,9 +106,12 @@ function TagEditorPopover({ item, onSave, onClose, className }: {
   );
 }
 
-export default function ItemCard({ item, layout = "normal", onDelete, onToggleWatched, onEditTags }: Props) {
+export default function ItemCard({ item, layout = "normal", onDelete, onToggleWatched, onEditTags, onSetProgress }: Props) {
   const [editingTags, setEditingTags] = useState(false);
   const link = itemLink(item);
+  // A counter only makes sense for serialized content (anime/manga …), decided
+  // by the item's tags. Plain videos/notes show no badge and no +1.
+  const serialized = isSerialized(item.tags.map(t => t.name));
 
   // Shared hover-button cluster. `variant` tunes colours to the layout's backdrop.
   function ActionButtons({ variant }: { variant: "overlay" | "panel" }) {
@@ -122,6 +153,23 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
             title="Toggle watched"
           >
             {statusIcon[item.status] ?? "✓"}
+          </button>
+        )}
+        {onSetProgress && serialized && (
+          <button
+            type="button"
+            disabled={isFinished(item)}
+            // Stop at total: once finished the cap makes +1 a no-op, shown disabled.
+            onClick={() => {
+              const next = item.total != null
+                ? Math.min(item.progress + 1, item.total)
+                : item.progress + 1;
+              if (next !== item.progress) onSetProgress(item, next);
+            }}
+            className={`${base} ${isFinished(item) ? "opacity-40 cursor-not-allowed" : "hover:bg-blue-700"}`}
+            title={isFinished(item) ? "Complete" : "Add one (episode / chapter)"}
+          >
+            +1
           </button>
         )}
         {onDelete && (
@@ -181,6 +229,7 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
                   ))}
                 </div>
               )}
+              {serialized && <ProgressBadge item={item} />}
             </div>
           </Link>
           <div className="flex-shrink-0 px-2 flex flex-col gap-1 justify-center opacity-0 group-hover:opacity-100 transition">
@@ -225,6 +274,7 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
           <div className="p-2">
             <div className="text-sm font-medium line-clamp-2 group-hover:text-white">{item.title || "(untitled)"}</div>
             {item.channel && <div className="text-xs text-zinc-400 mt-1 line-clamp-1">{item.channel}</div>}
+            {serialized && <ProgressBadge item={item} />}
           </div>
         </Link>
       </div>

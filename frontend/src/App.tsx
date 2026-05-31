@@ -7,14 +7,49 @@ import Trash from "./pages/Trash";
 import AddItemDialog from "./components/AddItemDialog";
 import SpaceDialog from "./components/SpaceDialog";
 import { api, Space } from "./api/client";
+import { getSerializedTags, setSerializedTags } from "./lib/serialized";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`;
 
-// Right-aligned "⋯" menu for secondary, rarely-used destinations (Trash) so they
-// don't clutter the main nav. Click-outside closes, like SpaceMenu below.
+// Edits the tags that mark content as serialized (gets an episode/chapter
+// counter). Persists locally; reloads so every card/detail re-reads the rule.
+function CounterTagsDialog({ onClose }: { onClose: () => void }) {
+  const [value, setValue] = useState(() => getSerializedTags().join(", "));
+  function save() {
+    setSerializedTags(value.split(","));
+    onClose();
+    window.location.reload();
+  }
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center" onClick={onClose}>
+      <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 w-96" onClick={e => e.stopPropagation()}>
+        <h2 className="text-sm font-medium mb-1">Counter tags</h2>
+        <p className="text-xs text-zinc-500 mb-3">
+          Items carrying any of these tags get an episode/chapter counter. Comma-separated.
+        </p>
+        <input
+          autoFocus
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") onClose(); }}
+          placeholder="source:anime, source:manga"
+          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-zinc-500"
+        />
+        <div className="flex justify-end gap-2 mt-3">
+          <button onClick={onClose} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100">Cancel</button>
+          <button onClick={save} className="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-500">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Right-aligned "⋯" menu for secondary, rarely-used destinations (Trash, settings)
+// so they don't clutter the main nav. Click-outside closes, like SpaceMenu below.
 function OverflowMenu() {
   const [open, setOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,29 +62,38 @@ function OverflowMenu() {
   }, [open]);
 
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className={`px-2 py-1.5 rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`}
-        title="More"
-        aria-label="More"
-      >
-        ⋯
-      </button>
-      {open && (
-        <div className="absolute top-full right-0 mt-1 z-40 min-w-[10rem] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col">
-          <NavLink
-            to="/trash"
-            onClick={() => setOpen(false)}
-            className={({ isActive }) =>
-              `px-3 py-1.5 text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
-            }
-          >
-            Trash
-          </NavLink>
-        </div>
-      )}
-    </div>
+    <>
+      <div ref={ref} className="relative">
+        <button
+          onClick={() => setOpen(o => !o)}
+          className={`px-2 py-1.5 rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`}
+          title="More"
+          aria-label="More"
+        >
+          ⋯
+        </button>
+        {open && (
+          <div className="absolute top-full right-0 mt-1 z-40 min-w-[10rem] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col">
+            <NavLink
+              to="/trash"
+              onClick={() => setOpen(false)}
+              className={({ isActive }) =>
+                `px-3 py-1.5 text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
+              }
+            >
+              Trash
+            </NavLink>
+            <button
+              onClick={() => { setOpen(false); setSettingsOpen(true); }}
+              className="px-3 py-1.5 text-sm text-left text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+            >
+              Counter tags…
+            </button>
+          </div>
+        )}
+      </div>
+      {settingsOpen && <CounterTagsDialog onClose={() => setSettingsOpen(false)} />}
+    </>
   );
 }
 

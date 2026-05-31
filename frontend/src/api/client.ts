@@ -17,6 +17,8 @@ export interface Item {
   published_at: string | null;
   source: string;
   status: ItemStatus;
+  progress: number;
+  total: number | null;
   needs_enrichment: boolean;
   deleted_at: string | null;
   created_at: string;
@@ -62,6 +64,8 @@ export interface ItemPatch {
   tags?: string[];
   description?: string;
   thumbnail_url?: string | null;
+  progress?: number;
+  total?: number | null;
 }
 
 export interface Space {

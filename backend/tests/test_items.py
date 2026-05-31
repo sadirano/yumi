@@ -156,6 +156,30 @@ def test_saved_filters_crud(client):
     assert client.delete(f"/api/saved-filters/{fid}").status_code == 404
 
 
+def test_progress_tracking(client):
+    item = client.post("/api/items", json={"note_title": "Frieren"}).json()
+    assert item["progress"] == 0 and item["total"] is None
+
+    # Set a bounded series (snapshot path runs with the new fields)
+    body = client.patch(f"/api/items/{item['id']}", json={"progress": 7, "total": 28}).json()
+    assert body["progress"] == 7 and body["total"] == 28
+
+    # Bump only progress; total is left untouched (exclude_unset)
+    client.patch(f"/api/items/{item['id']}", json={"progress": 8})
+    after = client.get(f"/api/items/{item['id']}").json()
+    assert after["progress"] == 8 and after["total"] == 28
+
+    # Clearing total explicitly marks it ongoing
+    assert client.patch(f"/api/items/{item['id']}", json={"total": None}).json()["total"] is None
+
+    # Edits were snapshotted; restoring the oldest revision rolls progress back
+    revs = client.get(f"/api/items/{item['id']}/revisions").json()
+    assert len(revs) >= 1
+    oldest = revs[-1]
+    restored = client.post(f"/api/items/{item['id']}/revisions/{oldest['id']}/restore")
+    assert restored.status_code == 200
+
+
 def test_freeform_note(client):
     r = client.post("/api/items", json={
         "note_title": "shower thought",

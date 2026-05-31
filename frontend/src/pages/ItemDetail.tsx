@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import { api, ItemStatus, Revision } from "../api/client";
+import { isSerialized } from "../lib/serialized";
 import TagInput from "../components/TagInput";
 
 type Layout = "split" | "notes";
@@ -24,6 +25,8 @@ export default function ItemDetail() {
   const [tags, setTags] = useState<string[]>([]);
   const [source, setSource] = useState("");
   const [status, setStatus] = useState<ItemStatus>("to-watch");
+  const [progress, setProgress] = useState(0);
+  const [total, setTotal] = useState<number | null>(null);
   const [preview, setPreview] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [layout, setLayout] = useState<Layout>("split");
@@ -56,12 +59,14 @@ export default function ItemDetail() {
     setTags(item.tags.map(t => t.name));
     setSource(item.source);
     setStatus(item.status);
+    setProgress(item.progress);
+    setTotal(item.total);
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
   }, [item?.id]);
 
   const save = useMutation({
-    mutationFn: (data: { title: string; notes_md: string; tags: string[]; source: string; status: ItemStatus }) =>
+    mutationFn: (data: { title: string; notes_md: string; tags: string[]; source: string; status: ItemStatus; progress: number; total: number | null }) =>
       api.patchItem(itemId, data),
     onMutate: () => setSaveStatus("saving"),
     onSuccess: () => {
@@ -76,10 +81,10 @@ export default function ItemDetail() {
   useEffect(() => {
     if (!ready.current) return;
     const t = setTimeout(() => {
-      save.mutate({ title, notes_md: notes, tags, source, status });
+      save.mutate({ title, notes_md: notes, tags, source, status, progress, total });
     }, 800);
     return () => clearTimeout(t);
-  }, [title, notes, tags, source, status]);
+  }, [title, notes, tags, source, status, progress, total]);
 
   const del = useMutation({
     mutationFn: () => api.deleteItem(itemId),
@@ -95,6 +100,8 @@ export default function ItemDetail() {
       setTags(updated.tags.map(t => t.name));
       setSource(updated.source);
       setStatus(updated.status);
+      setProgress(updated.progress);
+      setTotal(updated.total);
       setTimeout(() => { ready.current = true; }, 0);
       qc.invalidateQueries({ queryKey: ["item", itemId] });
       qc.invalidateQueries({ queryKey: ["items"] });
@@ -293,6 +300,34 @@ export default function ItemDetail() {
           <input value={source} onChange={e => setSource(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" />
         </div>
       </div>
+      {isSerialized(tags) && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-zinc-400 mb-1 block">progress</label>
+            <input
+              type="number"
+              min={0}
+              value={progress}
+              onChange={e => setProgress(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-zinc-400 mb-1 block">total <span className="text-zinc-600">(blank = ongoing)</span></label>
+            <input
+              type="number"
+              min={0}
+              value={total ?? ""}
+              onChange={e => {
+                const v = e.target.value.trim();
+                setTotal(v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)));
+              }}
+              placeholder="?"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+            />
+          </div>
+        </div>
+      )}
       {item.needs_enrichment && (
         <div className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 rounded p-2">
           Enrichment failed. Try "Re-fetch metadata" in the ... menu.
