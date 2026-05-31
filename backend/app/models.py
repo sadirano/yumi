@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, Index, String, Text, Float, Integer
+from sqlalchemy import ForeignKey, String, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base
@@ -79,27 +79,19 @@ class Space(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
 
 
-class Collection(Base):
-    __tablename__ = "collections"
+class SpaceFilter(Base):
+    """A named, Space-owned snapshot of the Library filter state. Membership is
+    live: applying it rewrites the URL query params, which the item query engine
+    ANDs on top of the owning Space's predicate."""
+
+    __tablename__ = "space_filters"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    space_id: Mapped[int] = mapped_column(
+        ForeignKey("spaces.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    notes_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # JSON object of persisted query params (q, tagExpr, tags, exclude_tags,
+    # tag_op, status_in, sort) — i.e. the URL params minus space/limit/offset.
+    params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
-    updated_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso, onupdate=utcnow_iso)
-
-
-class CollectionItem(Base):
-    __tablename__ = "collection_items"
-
-    collection_id: Mapped[int] = mapped_column(
-        ForeignKey("collections.id", ondelete="CASCADE"), primary_key=True
-    )
-    item_id: Mapped[int] = mapped_column(
-        ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
-    )
-    position: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
-
-    __table_args__ = (
-        Index("ix_collection_items_pos", "collection_id", "position"),
-    )

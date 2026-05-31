@@ -1,12 +1,48 @@
 import { useSearchParams } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { parseTagQuery } from "../lib/tagQuery";
-import type { Space, Tag } from "../api/client";
+import type { SavedFilter, Space, Tag } from "../api/client";
 
 const STATUSES = ["to-watch", "watching", "watched", "archived"] as const;
 const SORTS = ["recent", "random", "duration", "title"] as const;
+
+// Query params that describe a saved filter. Everything else in the URL
+// (space, filter, limit, offset) is positional context, not part of the filter.
+const FILTER_PARAM_KEYS = ["q", "tagExpr", "tags", "exclude_tags", "tag_op", "status_in", "sort"];
+
+function useCollapsed(id: string, defaultOpen = true) {
+  const key = `sidebar-section-${id}`;
+  const [open, setOpen] = useState(() => {
+    const v = localStorage.getItem(key);
+    return v === null ? defaultOpen : v === "1";
+  });
+  useEffect(() => { localStorage.setItem(key, open ? "1" : "0"); }, [key, open]);
+  return [open, setOpen] as const;
+}
+
+function Section({ id, title, defaultOpen = true, children }: {
+  id: string;
+  title: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useCollapsed(id, defaultOpen);
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between text-xs uppercase text-zinc-500 hover:text-zinc-300 transition"
+      >
+        <span>{title}</span>
+        <span className="text-[10px] text-zinc-600">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && <div className="mt-1">{children}</div>}
+    </div>
+  );
+}
 
 export default function FilterSidebar() {
   const [sp, setSp] = useSearchParams();
@@ -17,25 +53,34 @@ export default function FilterSidebar() {
 
   useEffect(() => { setQ(sp.get("q") ?? ""); }, [sp]);
 
-  function commit(next: URLSearchParams) {
+  // Always points at the latest committed params. The debounced commits below
+  // run from a timer whose closure (and react-router's functional-updater
+  // `prev`) can be a stale pre-click snapshot; reading the ref instead means a
+  // concurrently-set key like `filter`/`sort` isn't clobbered by the rebuild.
+  const spRef = useRef(sp);
+  spRef.current = sp;
+
+  function commit(mutate: (next: URLSearchParams) => void) {
+    const next = new URLSearchParams(spRef.current);
+    mutate(next);
     for (const k of Array.from(next.keys())) if (!next.get(k)) next.delete(k);
     setSp(next, { replace: true });
   }
 
   function applyText(value: string) {
-    const next = new URLSearchParams(sp);
-    if (value) next.set("q", value); else next.delete("q");
-    commit(next);
+    commit(next => {
+      if (value) next.set("q", value); else next.delete("q");
+    });
   }
 
   function applyTagExpr(value: string) {
-    const next = new URLSearchParams(sp);
-    next.set("tagExpr", value);
     const parsed = parseTagQuery(value);
-    if (parsed.tags.length) next.set("tags", parsed.tags.join(",")); else next.delete("tags");
-    if (parsed.exclude_tags.length) next.set("exclude_tags", parsed.exclude_tags.join(",")); else next.delete("exclude_tags");
-    next.set("tag_op", parsed.tag_op);
-    commit(next);
+    commit(next => {
+      next.set("tagExpr", value);
+      if (parsed.tags.length) next.set("tags", parsed.tags.join(",")); else next.delete("tags");
+      if (parsed.exclude_tags.length) next.set("exclude_tags", parsed.exclude_tags.join(",")); else next.delete("exclude_tags");
+      next.set("tag_op", parsed.tag_op);
+    });
   }
 
   useEffect(() => {
@@ -51,21 +96,21 @@ export default function FilterSidebar() {
   function toggleStatus(s: string) {
     const cur = new Set(statuses);
     if (cur.has(s)) cur.delete(s); else cur.add(s);
-    const next = new URLSearchParams(sp);
-    if (cur.size) next.set("status_in", Array.from(cur).join(",")); else next.delete("status_in");
-    commit(next);
+    commit(next => {
+      if (cur.size) next.set("status_in", Array.from(cur).join(",")); else next.delete("status_in");
+    });
   }
 
   function setSort(s: string) {
-    const next = new URLSearchParams(sp);
-    next.set("sort", s);
-    commit(next);
+    commit(next => next.set("sort", s));
   }
 
   function clearAll() {
     setQ("");
     setTagExpr("");
-    setSp(new URLSearchParams(), { replace: true });
+    const next = new URLSearchParams();
+    if (spaceId != null) next.set("space", String(spaceId));
+    setSp(next, { replace: true });
   }
 
   const parsed = useMemo(() => parseTagQuery(tagExpr), [tagExpr]);
@@ -116,33 +161,142 @@ export default function FilterSidebar() {
     }
   }
 
+  // ---- Saved filters (Space-scoped) ----------------------------------------
+  const qc = useQueryClient();
+  const activeFilterId = sp.get("filter") ? Number(sp.get("filter")) : null;
+  const [saving, setSaving] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const { data: savedFilters = [] } = useQuery({
+    queryKey: ["space-filters", spaceId],
+    queryFn: () => api.listSpaceFilters(spaceId!),
+    enabled: spaceId != null,
+    staleTime: 30_000,
+  });
+
+  const createFilter = useMutation({
+    mutationFn: ({ name, params }: { name: string; params: Record<string, string> }) =>
+      api.createSpaceFilter(spaceId!, name, params),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["space-filters", spaceId] });
+      setSaving(false);
+      setNewName("");
+    },
+  });
+
+  const deleteFilter = useMutation({
+    mutationFn: (id: number) => api.deleteSpaceFilter(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["space-filters", spaceId] }),
+  });
+
+  // The current filter state as a plain param map, minus positional context.
+  function currentParams(): Record<string, string> {
+    const out: Record<string, string> = {};
+    for (const [k, v] of sp.entries()) {
+      if (!FILTER_PARAM_KEYS.includes(k) || !v) continue;
+      out[k] = v;
+    }
+    return out;
+  }
+
+  // Replace the whole filter state with a saved one, keeping the active space.
+  function applyFilter(f: SavedFilter) {
+    const next = new URLSearchParams();
+    for (const [k, v] of Object.entries(f.params)) if (v) next.set(k, v);
+    if (spaceId != null) next.set("space", String(spaceId));
+    next.set("filter", String(f.id));
+    setSp(next, { replace: true });
+    setQ(f.params.q ?? "");
+    setTagExpr(f.params.tagExpr ?? "");
+  }
+
+  function saveCurrent() {
+    const name = newName.trim();
+    if (!name) return;
+    createFilter.mutate({ name, params: currentParams() });
+  }
+
   return (
     <aside className="w-64 shrink-0 border-r border-zinc-800 p-3 space-y-4 text-sm overflow-y-auto">
-      <div>
-        <label className="text-xs uppercase text-zinc-500">Search</label>
+      {spaceId != null && (
+        <Section id="saved-filters" title="Saved filters">
+          {savedFilters.length === 0 && !saving && (
+            <p className="text-[10px] text-zinc-600">None yet — refine below, then save.</p>
+          )}
+          <div className="space-y-1">
+            {savedFilters.map(f => {
+              const active = f.id === activeFilterId;
+              return (
+                <div key={f.id} className="group/sf flex items-center gap-1">
+                  <button
+                    onClick={() => applyFilter(f)}
+                    className={`flex-1 text-left px-2 py-1 rounded text-xs truncate transition ${
+                      active ? "bg-blue-600 text-white" : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                    }`}
+                    title={f.name}
+                  >
+                    {f.name}
+                  </button>
+                  <button
+                    onClick={() => deleteFilter.mutate(f.id)}
+                    className="px-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover/sf:opacity-100 transition-opacity text-xs"
+                    title="Delete saved filter"
+                  >
+                    ✕
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          {saving ? (
+            <div className="mt-1.5 flex items-center gap-1">
+              <input
+                autoFocus
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") saveCurrent();
+                  if (e.key === "Escape") { setSaving(false); setNewName(""); }
+                }}
+                placeholder="filter name"
+                className="flex-1 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs"
+              />
+              <button onClick={saveCurrent} className="px-1.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-xs">save</button>
+              <button onClick={() => { setSaving(false); setNewName(""); }} className="px-1 text-zinc-500 hover:text-zinc-300 text-xs">✕</button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setSaving(true)}
+              className="mt-1.5 text-xs text-zinc-400 hover:text-zinc-100"
+            >
+              + save current
+            </button>
+          )}
+        </Section>
+      )}
+
+      <Section id="search" title="Search">
         <input
           value={q}
           onChange={e => setQ(e.target.value)}
           placeholder="full-text in titles & notes"
-          className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5"
         />
-      </div>
+      </Section>
 
-      <div>
-        <label className="text-xs uppercase text-zinc-500">Tag expression</label>
+      <Section id="tag-expr" title="Tag expression">
         <input
           value={tagExpr}
           onChange={e => setTagExpr(e.target.value)}
           placeholder="genre:romance AND source:manga"
-          className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 font-mono text-xs"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 font-mono text-xs"
         />
         <p className="text-[10px] text-zinc-500 mt-1">AND / OR / NOT · -tag excludes · namespace:value</p>
-      </div>
+      </Section>
 
       {grouped.length > 0 && (
-        <div>
-          <label className="text-xs uppercase text-zinc-500">Tags</label>
-          <div className="mt-1 space-y-2.5 max-h-72 overflow-y-auto pr-0.5">
+        <Section id="tags" title="Tags">
+          <div className="space-y-2.5 max-h-72 overflow-y-auto pr-0.5">
             {grouped.map(([ns, tags]) => (
               <div key={ns || "__other__"}>
                 {ns && (
@@ -171,12 +325,11 @@ export default function FilterSidebar() {
               </div>
             ))}
           </div>
-        </div>
+        </Section>
       )}
 
-      <div>
-        <label className="text-xs uppercase text-zinc-500">Status</label>
-        <div className="flex flex-wrap gap-1 mt-1">
+      <Section id="status" title="Status">
+        <div className="flex flex-wrap gap-1">
           {STATUSES.map(s => (
             <button
               key={s}
@@ -187,18 +340,17 @@ export default function FilterSidebar() {
             </button>
           ))}
         </div>
-      </div>
+      </Section>
 
-      <div>
-        <label className="text-xs uppercase text-zinc-500">Sort</label>
+      <Section id="sort" title="Sort">
         <select
           value={sort}
           onChange={e => setSort(e.target.value)}
-          className="w-full mt-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5"
+          className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5"
         >
           {SORTS.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-      </div>
+      </Section>
 
       <button onClick={clearAll} className="text-xs text-zinc-400 hover:text-zinc-100 underline">
         clear filters

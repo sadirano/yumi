@@ -125,27 +125,35 @@ def test_soft_delete_restore_purge(client):
     assert client.get(f"/api/items/{item['id']}").status_code == 404
 
 
-def test_collections_reorder(client):
-    a = client.post("/api/items", json={"url": "https://youtu.be/c1"}).json()
-    b = client.post("/api/items", json={"url": "https://youtu.be/c2"}).json()
-    c = client.post("/api/items", json={"url": "https://youtu.be/c3"}).json()
-    col = client.post("/api/collections", json={"name": "Top Picks"}).json()
+def test_saved_filters_crud(client):
+    space = client.post("/api/spaces", json={
+        "name": "Music", "namespaces": ["mood"], "tags": [],
+    }).json()
 
-    for it in (a, b, c):
-        assert client.post(f"/api/collections/{col['id']}/items",
-                           json={"item_id": it["id"]}).status_code == 204
+    # Empty to start
+    assert client.get(f"/api/spaces/{space['id']}/filters").json() == []
 
-    r = client.get(f"/api/collections/{col['id']}")
-    order = [i["id"] for i in r.json()["items"]]
-    assert order == [a["id"], b["id"], c["id"]]
+    # Create
+    params = {"tagExpr": "mood:calm AND mood:soft", "tags": "mood:calm,mood:soft",
+              "tag_op": "AND", "sort": "title"}
+    f = client.post(f"/api/spaces/{space['id']}/filters",
+                    json={"name": "Calm and Soft", "params": params})
+    assert f.status_code == 201
+    fid = f.json()["id"]
+    assert f.json()["params"] == params
 
-    # Move c to after a
-    assert client.patch(f"/api/collections/{col['id']}/items/{c['id']}",
-                        json={"after_id": a["id"]}).status_code == 204
+    # List round-trips the params verbatim
+    listed = client.get(f"/api/spaces/{space['id']}/filters").json()
+    assert len(listed) == 1
+    assert listed[0]["params"] == params
 
-    r = client.get(f"/api/collections/{col['id']}")
-    order = [i["id"] for i in r.json()["items"]]
-    assert order == [a["id"], c["id"], b["id"]]
+    # Rename
+    assert client.patch(f"/api/saved-filters/{fid}",
+                        json={"name": "Calm"}).json()["name"] == "Calm"
+
+    # Deleting the space cascades the filter away
+    assert client.delete(f"/api/spaces/{space['id']}").status_code == 204
+    assert client.delete(f"/api/saved-filters/{fid}").status_code == 404
 
 
 def test_freeform_note(client):

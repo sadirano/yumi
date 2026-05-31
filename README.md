@@ -1,6 +1,6 @@
 # yumi — Personal Favorites Library
 
-A local-first replacement for YouTube's bookmark UX. Save any YouTube link (or any URL, local file, or freeform note) with tags, markdown notes, status, and put them in hand-curated ordered collections. Full-text search + boolean tag queries. SQLite under the hood, FastAPI + React on top.
+A local-first replacement for YouTube's bookmark UX. Save any YouTube link (or any URL, local file, or freeform note) with tags, markdown notes, and status, then organize them into Spaces with per-Space saved filters — named, live tag queries that always reflect the current library. Full-text search + boolean tag queries. SQLite under the hood, FastAPI + React on top.
 
 Runs on `127.0.0.1:8765`, single-user, no auth.
 
@@ -83,14 +83,10 @@ POST   /api/items/{id}/refresh       re-enrich
 GET    /api/tags?prefix=             autocomplete
 DELETE /api/tags/{name}
 
-GET    /api/collections
-POST   /api/collections
-GET    /api/collections/{id}
-PATCH  /api/collections/{id}
-DELETE /api/collections/{id}
-POST   /api/collections/{id}/items                 {item_id, after_id?}
-PATCH  /api/collections/{id}/items/{item_id}       {after_id?}
-DELETE /api/collections/{id}/items/{item_id}
+GET    /api/spaces/{space_id}/filters
+POST   /api/spaces/{space_id}/filters             {name, params}
+PATCH  /api/saved-filters/{id}                     {name?, params?}
+DELETE /api/saved-filters/{id}
 
 GET    /api/trash
 ```

@@ -1,10 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Link, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Library from "./pages/Library";
 import ItemDetail from "./pages/ItemDetail";
-import Collections from "./pages/Collections";
-import CollectionDetail from "./pages/CollectionDetail";
 import Trash from "./pages/Trash";
 import AddItemDialog from "./components/AddItemDialog";
 import SpaceDialog from "./components/SpaceDialog";
@@ -12,6 +10,122 @@ import { api, Space } from "./api/client";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`;
+
+// A space whose name contains a colon (e.g. "Work: Alpha") is collapsed into a
+// dropdown menu named by the part before the first colon ("Work"); the part
+// after becomes its label inside the menu. Spaces with no colon stay top-level.
+type NavEntry =
+  | { kind: "space"; space: Space }
+  | { kind: "group"; prefix: string; spaces: Space[] };
+
+function buildNavEntries(spaces: Space[]): NavEntry[] {
+  const entries: NavEntry[] = [];
+  const groupIndex = new Map<string, number>();
+  for (const space of spaces) {
+    const colon = space.name.indexOf(":");
+    if (colon > 0) {
+      const prefix = space.name.slice(0, colon).trim();
+      const existing = groupIndex.get(prefix);
+      if (existing === undefined) {
+        groupIndex.set(prefix, entries.length);
+        entries.push({ kind: "group", prefix, spaces: [space] });
+      } else {
+        (entries[existing] as { spaces: Space[] }).spaces.push(space);
+      }
+    } else {
+      entries.push({ kind: "space", space });
+    }
+  }
+  return entries;
+}
+
+// Label shown inside a group menu: the part after the first colon, trimmed.
+// Falls back to the full name if there's nothing after the colon.
+function menuLabel(name: string): string {
+  const colon = name.indexOf(":");
+  const rest = colon > 0 ? name.slice(colon + 1).trim() : "";
+  return rest || name;
+}
+
+function SpaceLink({
+  space, label, activeSpaceId, onEdit, className,
+}: {
+  space: Space;
+  label: string;
+  activeSpaceId: number | null;
+  onEdit: (s: Space) => void;
+  className?: string;
+}) {
+  const active = activeSpaceId === space.id;
+  return (
+    <span className={`group/space relative inline-flex items-center ${className ?? ""}`}>
+      <Link
+        to={`/?space=${space.id}`}
+        className={`px-3 py-1.5 rounded-l text-sm pr-1.5 ${active ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`}
+      >
+        {label}
+      </Link>
+      <button
+        onClick={() => onEdit(space)}
+        className={`px-1 py-1.5 rounded-r text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/space:opacity-100 transition-opacity text-xs ${active ? "bg-zinc-800" : "hover:bg-zinc-800"}`}
+        title="Edit space"
+      >
+        ⚙
+      </button>
+    </span>
+  );
+}
+
+function SpaceMenu({
+  prefix, spaces, activeSpaceId, onEdit,
+}: {
+  prefix: string;
+  spaces: Space[];
+  activeSpaceId: number | null;
+  onEdit: (s: Space) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const activeChild = spaces.find(s => s.id === activeSpaceId);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative inline-flex items-center">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`px-3 py-1.5 rounded text-sm inline-flex items-center gap-1 ${
+          activeChild ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+        }`}
+        title={`${prefix} spaces`}
+      >
+        {activeChild ? `${prefix}: ${menuLabel(activeChild.name)}` : prefix}
+        <span className="text-[10px] text-zinc-500">▾</span>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-40 min-w-[12rem] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col">
+          {spaces.map(space => (
+            <SpaceLink
+              key={space.id}
+              space={space}
+              label={menuLabel(space.name)}
+              activeSpaceId={activeSpaceId}
+              onEdit={s => { setOpen(false); onEdit(s); }}
+              className="px-1"
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function SpaceNavItems({ spaces }: { spaces: Space[] }) {
   const [sp] = useSearchParams();
@@ -30,25 +144,29 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
   });
 
+  const entries = buildNavEntries(spaces);
+
   return (
     <>
-      {spaces.map(space => (
-        <span key={space.id} className="group/space relative inline-flex items-center">
-          <Link
-            to={`/?space=${space.id}`}
-            className={`px-3 py-1.5 rounded-l text-sm pr-1.5 ${activeSpaceId === space.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`}
-          >
-            {space.name}
-          </Link>
-          <button
-            onClick={() => setEditing(space)}
-            className={`px-1 py-1.5 rounded-r text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/space:opacity-100 transition-opacity text-xs ${activeSpaceId === space.id ? "bg-zinc-800" : "hover:bg-zinc-800"}`}
-            title="Edit space"
-          >
-            ⚙
-          </button>
-        </span>
-      ))}
+      {entries.map(entry =>
+        entry.kind === "space" ? (
+          <SpaceLink
+            key={entry.space.id}
+            space={entry.space}
+            label={entry.space.name}
+            activeSpaceId={activeSpaceId}
+            onEdit={setEditing}
+          />
+        ) : (
+          <SpaceMenu
+            key={`grp:${entry.prefix}`}
+            prefix={entry.prefix}
+            spaces={entry.spaces}
+            activeSpaceId={activeSpaceId}
+            onEdit={setEditing}
+          />
+        )
+      )}
       {editing && (
         <SpaceDialog
           space={editing}
@@ -94,7 +212,6 @@ export default function App() {
           </button>
         </nav>
         <div className="flex gap-1 ml-auto items-center">
-          <NavLink to="/collections" className={navClass}>Collections</NavLink>
           <NavLink to="/trash" className={navClass}>Trash</NavLink>
           <button
             onClick={() => setAdding(true)}
@@ -108,8 +225,6 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Library />} />
           <Route path="/items/:id" element={<ItemDetail />} />
-          <Route path="/collections" element={<Collections />} />
-          <Route path="/collections/:id" element={<CollectionDetail />} />
           <Route path="/trash" element={<Trash />} />
         </Routes>
       </main>

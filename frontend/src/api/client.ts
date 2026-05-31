@@ -24,17 +24,12 @@ export interface Item {
   tags: Tag[];
 }
 
-export interface Collection {
+export interface SavedFilter {
   id: number;
+  space_id: number;
   name: string;
-  notes_md: string;
+  params: Record<string, string>;
   created_at: string;
-  updated_at: string;
-  item_count: number;
-}
-
-export interface CollectionDetail extends Collection {
-  items: Item[];
 }
 
 export interface Revision {
@@ -142,18 +137,12 @@ export const api = {
     req<Tag[]>("GET", `/tags${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""}`),
   deleteTag: (name: string) => req<void>("DELETE", `/tags/${encodeURIComponent(name)}`),
 
-  listCollections: () => req<Collection[]>("GET", `/collections`),
-  getCollection: (id: number) => req<CollectionDetail>("GET", `/collections/${id}`),
-  createCollection: (name: string) => req<Collection>("POST", `/collections`, { name, notes_md: "" }),
-  patchCollection: (id: number, body: { name: string; notes_md: string }) =>
-    req<Collection>("PATCH", `/collections/${id}`, body),
-  deleteCollection: (id: number) => req<void>("DELETE", `/collections/${id}`),
-  addToCollection: (cid: number, item_id: number, after_id?: number | null) =>
-    req<void>("POST", `/collections/${cid}/items`, { item_id, after_id }),
-  removeFromCollection: (cid: number, item_id: number) =>
-    req<void>("DELETE", `/collections/${cid}/items/${item_id}`),
-  moveInCollection: (cid: number, item_id: number, after_id: number | null) =>
-    req<void>("PATCH", `/collections/${cid}/items/${item_id}`, { after_id }),
+  listSpaceFilters: (spaceId: number) => req<SavedFilter[]>("GET", `/spaces/${spaceId}/filters`),
+  createSpaceFilter: (spaceId: number, name: string, params: Record<string, string>) =>
+    req<SavedFilter>("POST", `/spaces/${spaceId}/filters`, { name, params }),
+  updateSpaceFilter: (id: number, data: { name?: string; params?: Record<string, string> }) =>
+    req<SavedFilter>("PATCH", `/saved-filters/${id}`, data),
+  deleteSpaceFilter: (id: number) => req<void>("DELETE", `/saved-filters/${id}`),
 
   listTrash: () => req<Item[]>("GET", `/trash`),
 

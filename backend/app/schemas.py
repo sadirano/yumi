@@ -100,27 +100,19 @@ class DuplicateError(BaseModel):
     existing: ItemOut
 
 
-class CollectionBase(BaseModel):
+class SavedFilterCreate(BaseModel):
     name: str
-    notes_md: str = ""
+    params: dict = Field(default_factory=dict)
 
 
-class CollectionOut(CollectionBase):
-    model_config = ConfigDict(from_attributes=True)
+class SavedFilterPatch(BaseModel):
+    name: Optional[str] = None
+    params: Optional[dict] = None
+
+
+class SavedFilterOut(BaseModel):
     id: int
+    space_id: int
+    name: str
+    params: dict = Field(default_factory=dict)
     created_at: str
-    updated_at: str
-    item_count: int = 0
-
-
-class CollectionDetail(CollectionOut):
-    items: list[ItemOut] = Field(default_factory=list)
-
-
-class CollectionItemAdd(BaseModel):
-    item_id: int
-    after_id: Optional[int] = None
-
-
-class CollectionItemMove(BaseModel):
-    after_id: Optional[int] = None
