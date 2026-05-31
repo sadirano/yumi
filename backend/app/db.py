@@ -78,6 +78,8 @@ _COLUMN_MIGRATIONS = [
     ("items", "total", "INTEGER"),
     ("item_revisions", "progress", "INTEGER NOT NULL DEFAULT 0"),
     ("item_revisions", "total", "INTEGER"),
+    ("items", "anilist_id", "INTEGER"),
+    ("items", "related_links_json", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 

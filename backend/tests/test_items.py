@@ -180,6 +180,27 @@ def test_progress_tracking(client):
     assert restored.status_code == 200
 
 
+def test_anilist_and_related_links(client):
+    item = client.post("/api/items", json={"note_title": "Frieren", "tags": ["source:anime"]}).json()
+    assert item["anilist_id"] is None and item["related_links"] == []
+
+    body = client.patch(f"/api/items/{item['id']}", json={
+        "anilist_id": 154587,
+        "related_links": [
+            {"label": "MAL", "url": "https://myanimelist.net/anime/52991"},
+            {"label": "", "url": "https://anilist.co/anime/154587"},
+            {"label": "blank", "url": "   "},  # no real url -> dropped
+        ],
+    }).json()
+    assert body["anilist_id"] == 154587
+    assert len(body["related_links"]) == 2
+    assert body["related_links"][0] == {"label": "MAL", "url": "https://myanimelist.net/anime/52991"}
+
+    # Clearing the id; related_links untouched when omitted from the patch
+    assert client.patch(f"/api/items/{item['id']}", json={"anilist_id": None}).json()["anilist_id"] is None
+    assert len(client.get(f"/api/items/{item['id']}").json()["related_links"]) == 2
+
+
 def test_freeform_note(client):
     r = client.post("/api/items", json={
         "note_title": "shower thought",

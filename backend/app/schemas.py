@@ -16,6 +16,11 @@ class TagOut(BaseModel):
     count: int = 0
 
 
+class RelatedLink(BaseModel):
+    label: str = ""
+    url: str
+
+
 class ItemBase(BaseModel):
     title: str = ""
     description: str = ""
@@ -28,6 +33,8 @@ class ItemBase(BaseModel):
     status: ItemStatus = "to-watch"
     progress: int = 0
     total: Optional[int] = None
+    anilist_id: Optional[int] = None
+    related_links: list[RelatedLink] = Field(default_factory=list)
 
 
 class ItemOut(ItemBase):
@@ -64,6 +71,8 @@ class ItemPatch(BaseModel):
     thumbnail_url: Optional[str] = None
     progress: Optional[int] = None
     total: Optional[int] = None
+    anilist_id: Optional[int] = None
+    related_links: Optional[list[RelatedLink]] = None
 
 
 class RevisionOut(BaseModel):

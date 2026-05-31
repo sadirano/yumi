@@ -3,6 +3,8 @@ export type ItemStatus = "to-watch" | "watching" | "watched" | "archived";
 
 export interface Tag { id: number; name: string; count: number }
 
+export interface RelatedLink { label: string; url: string }
+
 export interface Item {
   id: number;
   kind: ItemKind;
@@ -19,6 +21,8 @@ export interface Item {
   status: ItemStatus;
   progress: number;
   total: number | null;
+  anilist_id: number | null;
+  related_links: RelatedLink[];
   needs_enrichment: boolean;
   deleted_at: string | null;
   created_at: string;
@@ -66,6 +70,8 @@ export interface ItemPatch {
   thumbnail_url?: string | null;
   progress?: number;
   total?: number | null;
+  anilist_id?: number | null;
+  related_links?: RelatedLink[];
 }
 
 export interface Space {

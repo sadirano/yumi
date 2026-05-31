@@ -232,6 +232,10 @@ def patch_item(
     data = payload.model_dump(exclude_unset=True)
     if "tags" in data:
         set_item_tags(db, item, data.pop("tags") or [])
+    if "related_links" in data:
+        # Drop blank rows (no url) so half-typed entries don't persist.
+        links = [l for l in (data.pop("related_links") or []) if l.get("url", "").strip()]
+        item.related_links_json = json.dumps(links)
     for k, v in data.items():
         setattr(item, k, v)
     item.updated_at = utcnow_iso()

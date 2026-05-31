@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { api, ItemStatus, Revision } from "../api/client";
+import { api, ItemStatus, RelatedLink, Revision } from "../api/client";
 import { isSerialized } from "../lib/serialized";
+import { anilistUrl } from "../lib/anilist";
 import TagInput from "../components/TagInput";
 
 type Layout = "split" | "notes";
@@ -27,6 +28,8 @@ export default function ItemDetail() {
   const [status, setStatus] = useState<ItemStatus>("to-watch");
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
+  const [anilistId, setAnilistId] = useState<number | null>(null);
+  const [relatedLinks, setRelatedLinks] = useState<RelatedLink[]>([]);
   const [preview, setPreview] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [layout, setLayout] = useState<Layout>("split");
@@ -61,12 +64,14 @@ export default function ItemDetail() {
     setStatus(item.status);
     setProgress(item.progress);
     setTotal(item.total);
+    setAnilistId(item.anilist_id);
+    setRelatedLinks(item.related_links);
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
   }, [item?.id]);
 
   const save = useMutation({
-    mutationFn: (data: { title: string; notes_md: string; tags: string[]; source: string; status: ItemStatus; progress: number; total: number | null }) =>
+    mutationFn: (data: { title: string; notes_md: string; tags: string[]; source: string; status: ItemStatus; progress: number; total: number | null; anilist_id: number | null; related_links: RelatedLink[] }) =>
       api.patchItem(itemId, data),
     onMutate: () => setSaveStatus("saving"),
     onSuccess: () => {
@@ -81,10 +86,14 @@ export default function ItemDetail() {
   useEffect(() => {
     if (!ready.current) return;
     const t = setTimeout(() => {
-      save.mutate({ title, notes_md: notes, tags, source, status, progress, total });
+      save.mutate({
+        title, notes_md: notes, tags, source, status, progress, total,
+        anilist_id: anilistId,
+        related_links: relatedLinks.filter(l => l.url.trim()),
+      });
     }, 800);
     return () => clearTimeout(t);
-  }, [title, notes, tags, source, status, progress, total]);
+  }, [title, notes, tags, source, status, progress, total, anilistId, relatedLinks]);
 
   const del = useMutation({
     mutationFn: () => api.deleteItem(itemId),
@@ -102,6 +111,8 @@ export default function ItemDetail() {
       setStatus(updated.status);
       setProgress(updated.progress);
       setTotal(updated.total);
+      setAnilistId(updated.anilist_id);
+      setRelatedLinks(updated.related_links);
       setTimeout(() => { ready.current = true; }, 0);
       qc.invalidateQueries({ queryKey: ["item", itemId] });
       qc.invalidateQueries({ queryKey: ["items"] });
@@ -139,6 +150,12 @@ export default function ItemDetail() {
       setThumbEdit(false);
     },
   });
+
+  function updateLink(i: number, field: "label" | "url", val: string) {
+    setRelatedLinks(prev => prev.map((l, j) => (j === i ? { ...l, [field]: val } : l)));
+  }
+  const addLink = () => setRelatedLinks(prev => [...prev, { label: "", url: "" }]);
+  const removeLink = (i: number) => setRelatedLinks(prev => prev.filter((_, j) => j !== i));
 
   if (isLoading || !item) return <div className="p-6 text-zinc-500">Loading...</div>;
 
@@ -328,6 +345,60 @@ export default function ItemDetail() {
           </div>
         </div>
       )}
+      {isSerialized(tags) && (
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">AniList id</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={0}
+              value={anilistId ?? ""}
+              onChange={e => {
+                const v = e.target.value.trim();
+                setAnilistId(v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)));
+              }}
+              placeholder="e.g. 154587"
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+            />
+            {anilistId != null && (
+              <a
+                href={anilistUrl(anilistId, tags)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-blue-400 hover:underline whitespace-nowrap"
+              >
+                open ↗
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">related links</label>
+        <div className="space-y-1.5">
+          {relatedLinks.map((lnk, i) => (
+            <div key={i} className="flex items-center gap-1.5">
+              <input
+                value={lnk.label}
+                onChange={e => updateLink(i, "label", e.target.value)}
+                placeholder="label"
+                className="w-28 shrink-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+              />
+              <input
+                value={lnk.url}
+                onChange={e => updateLink(i, "url", e.target.value)}
+                placeholder="https://…"
+                className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+              />
+              {lnk.url.trim() && (
+                <a href={lnk.url} target="_blank" rel="noreferrer" className="text-zinc-400 hover:text-blue-400 text-sm" title="open">↗</a>
+              )}
+              <button type="button" onClick={() => removeLink(i)} className="text-zinc-600 hover:text-red-400 text-sm" title="remove">✕</button>
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={addLink} className="mt-1.5 text-xs text-zinc-400 hover:text-zinc-100">+ add link</button>
+      </div>
       {item.needs_enrichment && (
         <div className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 rounded p-2">
           Enrichment failed. Try "Re-fetch metadata" in the ... menu.

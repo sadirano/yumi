@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 
 from sqlalchemy import ForeignKey, String, Text, Integer
@@ -33,6 +34,10 @@ class Item(Base):
     # derived (total is not None and progress >= total), never stored.
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # AniList media id (anime vs manga is derived from the item's tags); the URL
+    # is built client-side. related_links_json is a JSON array of {label, url}.
+    anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    related_links_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     needs_enrichment: Mapped[bool] = mapped_column(default=False)
     deleted_at: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
@@ -41,6 +46,10 @@ class Item(Base):
     tags: Mapped[list["Tag"]] = relationship(
         "Tag", secondary="item_tags", back_populates="items", lazy="selectin"
     )
+
+    @property
+    def related_links(self) -> list[dict]:
+        return json.loads(self.related_links_json or "[]")
 
 
 class Tag(Base):
