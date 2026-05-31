@@ -29,6 +29,7 @@ export default function ItemDetail() {
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [anilistId, setAnilistId] = useState<number | null>(null);
+  const [editingAnilist, setEditingAnilist] = useState(false);
   const [relatedLinks, setRelatedLinks] = useState<RelatedLink[]>([]);
   const [preview, setPreview] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -65,6 +66,7 @@ export default function ItemDetail() {
     setProgress(item.progress);
     setTotal(item.total);
     setAnilistId(item.anilist_id);
+    setEditingAnilist(false);
     setRelatedLinks(item.related_links);
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
@@ -348,29 +350,37 @@ export default function ItemDetail() {
       {isSerialized(tags) && (
         <div>
           <label className="text-xs text-zinc-400 mb-1 block">AniList id</label>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              value={anilistId ?? ""}
-              onChange={e => {
-                const v = e.target.value.trim();
-                setAnilistId(v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)));
-              }}
-              placeholder="e.g. 154587"
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
-            />
-            {anilistId != null && (
+          {anilistId != null && !editingAnilist ? (
+            // Once an id is set, show it as the link itself; "edit" reopens the input.
+            <div className="flex items-center gap-2">
               <a
                 href={anilistUrl(anilistId, tags)}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs text-blue-400 hover:underline whitespace-nowrap"
+                className="text-sm text-blue-400 hover:underline"
               >
-                open ↗
+                #{anilistId} ↗
               </a>
-            )}
-          </div>
+              <button type="button" onClick={() => setEditingAnilist(true)} className="text-xs text-zinc-500 hover:text-zinc-300">edit</button>
+              <button type="button" onClick={() => { setAnilistId(null); setEditingAnilist(false); }} className="text-xs text-zinc-600 hover:text-red-400">clear</button>
+            </div>
+          ) : (
+            <input
+              type="number"
+              min={0}
+              autoFocus={editingAnilist}
+              value={anilistId ?? ""}
+              onFocus={() => setEditingAnilist(true)}
+              onChange={e => {
+                const v = e.target.value.trim();
+                setAnilistId(v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)));
+              }}
+              onBlur={() => setEditingAnilist(false)}
+              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+              placeholder="e.g. 154587"
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
+            />
+          )}
         </div>
       )}
       <div>
