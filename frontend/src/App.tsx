@@ -11,6 +11,48 @@ import { api, Space } from "./api/client";
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `px-3 py-1.5 rounded text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`;
 
+// Right-aligned "⋯" menu for secondary, rarely-used destinations (Trash) so they
+// don't clutter the main nav. Click-outside closes, like SpaceMenu below.
+function OverflowMenu() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`px-2 py-1.5 rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`}
+        title="More"
+        aria-label="More"
+      >
+        ⋯
+      </button>
+      {open && (
+        <div className="absolute top-full right-0 mt-1 z-40 min-w-[10rem] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col">
+          <NavLink
+            to="/trash"
+            onClick={() => setOpen(false)}
+            className={({ isActive }) =>
+              `px-3 py-1.5 text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
+            }
+          >
+            Trash
+          </NavLink>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // A space whose name contains a colon (e.g. "Work: Alpha") is collapsed into a
 // dropdown menu named by the part before the first colon ("Work"); the part
 // after becomes its label inside the menu. Spaces with no colon stay top-level.
@@ -212,7 +254,7 @@ export default function App() {
           </button>
         </nav>
         <div className="flex gap-1 ml-auto items-center">
-          <NavLink to="/trash" className={navClass}>Trash</NavLink>
+          <OverflowMenu />
           <button
             onClick={() => setAdding(true)}
             className="ml-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium"

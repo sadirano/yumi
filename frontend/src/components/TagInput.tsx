@@ -138,7 +138,10 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
       return;
     }
 
-    if (e.key === "Backspace" && !input && value.length) {
+    // Only act on a deliberate, discrete press. Ignoring auto-repeat (e.repeat)
+    // means holding Backspace removes at most one tag instead of chain-deleting
+    // the whole list when the key is held a moment too long.
+    if (e.key === "Backspace" && !input && value.length && !e.repeat) {
       remove(value[value.length - 1]);
     }
   }

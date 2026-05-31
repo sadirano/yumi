@@ -166,6 +166,15 @@ export default function FilterSidebar() {
   const activeFilterId = sp.get("filter") ? Number(sp.get("filter")) : null;
   const [saving, setSaving] = useState(false);
   const [newName, setNewName] = useState("");
+  // Two-step delete: first click on a filter's ✕ arms it (shows "remove?"),
+  // second click removes. Auto-disarms so a stray first click is harmless.
+  const [armedDelete, setArmedDelete] = useState<number | null>(null);
+  const disarmTimer = useRef<number | undefined>(undefined);
+  function armDelete(id: number) {
+    setArmedDelete(id);
+    window.clearTimeout(disarmTimer.current);
+    disarmTimer.current = window.setTimeout(() => setArmedDelete(null), 3000);
+  }
 
   const { data: savedFilters = [] } = useQuery({
     queryKey: ["space-filters", spaceId],
@@ -237,13 +246,23 @@ export default function FilterSidebar() {
                   >
                     {f.name}
                   </button>
-                  <button
-                    onClick={() => deleteFilter.mutate(f.id)}
-                    className="px-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover/sf:opacity-100 transition-opacity text-xs"
-                    title="Delete saved filter"
-                  >
-                    ✕
-                  </button>
+                  {armedDelete === f.id ? (
+                    <button
+                      onClick={() => { deleteFilter.mutate(f.id); setArmedDelete(null); }}
+                      className="px-1 text-red-400 hover:text-red-300 text-[10px] whitespace-nowrap"
+                      title="Click again to remove"
+                    >
+                      remove?
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => armDelete(f.id)}
+                      className="px-1 text-zinc-600 hover:text-red-400 opacity-0 group-hover/sf:opacity-100 transition-opacity text-xs"
+                      title="Delete saved filter"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               );
             })}
