@@ -3,9 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api/client";
 import { parseTagQuery } from "../lib/tagQuery";
+import { STATUSES, statusLabel } from "../lib/status";
 import type { SavedFilter, Space, Tag } from "../api/client";
 
-const STATUSES = ["to-watch", "watching", "watched", "archived"] as const;
 const SORTS = ["recent", "random", "duration", "title"] as const;
 
 // Query params that describe a saved filter. Everything else in the URL
@@ -355,7 +355,7 @@ export default function FilterSidebar() {
               onClick={() => toggleStatus(s)}
               className={`px-2 py-1 rounded text-xs ${statuses.includes(s) ? "bg-blue-600" : "bg-zinc-800 text-zinc-400"}`}
             >
-              {s}
+              {statusLabel(s, activeSpace)}
             </button>
           ))}
         </div>

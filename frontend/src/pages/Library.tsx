@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { api, Item, ItemQuery, ItemStatus } from "../api/client";
+import { NEXT_STATUS } from "../lib/status";
 import FilterSidebar from "../components/FilterSidebar";
 import ItemCard, { Layout } from "../components/ItemCard";
 
@@ -54,16 +55,17 @@ export default function Library() {
     queryFn: () => api.listItems(query),
   });
 
-  const del = useMutation({
-    mutationFn: (id: number) => api.deleteItem(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["items"] }),
+  // Spaces supply the per-Space status labels shown on cards; resolve the active
+  // one from the URL. Unscoped Library => no space => canonical default labels.
+  const { data: spaces = [] } = useQuery({
+    queryKey: ["spaces"],
+    queryFn: api.listSpaces,
+    staleTime: 60_000,
   });
+  const activeSpace = query.space_id != null ? spaces.find(s => s.id === query.space_id) ?? null : null;
 
   const toggleWatched = useMutation({
-    mutationFn: (it: Item) => {
-      const cycle: Record<string, ItemStatus> = { "to-watch": "watching", "watching": "watched", "watched": "to-watch", "archived": "to-watch" };
-      return api.patchItem(it.id, { status: cycle[it.status] ?? "watching" });
-    },
+    mutationFn: (it: Item) => api.patchItem(it.id, { status: NEXT_STATUS[it.status] }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["items"] }),
   });
 
@@ -150,7 +152,7 @@ export default function Library() {
                   key={it.id}
                   item={it}
                   layout={layout}
-                  onDelete={(id) => del.mutate(id)}
+                  space={activeSpace}
                   onToggleWatched={(it) => toggleWatched.mutate(it)}
                   onEditTags={(it, tags) => editTags.mutate({ id: it.id, tags })}
                   onSetProgress={(it, progress) => setProgress.mutate({ id: it.id, progress })}

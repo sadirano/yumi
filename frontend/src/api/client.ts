@@ -1,5 +1,5 @@
 export type ItemKind = "youtube" | "url" | "file" | "note";
-export type ItemStatus = "to-watch" | "watching" | "watched" | "archived";
+export type ItemStatus = "plan" | "in-progress" | "completed" | "archived";
 
 export interface Tag { id: number; name: string; count: number }
 
@@ -17,13 +17,14 @@ export interface Item {
   channel: string;
   duration_sec: number | null;
   published_at: string | null;
-  source: string;
   status: ItemStatus;
   progress: number;
   total: number | null;
   anilist_id: number | null;
   related_links: RelatedLink[];
   needs_enrichment: boolean;
+  access_count: number;
+  last_accessed_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -44,7 +45,6 @@ export interface Revision {
   title: string;
   notes_md: string;
   tags_json: string;
-  source: string;
   status: string;
   created_at: string;
 }
@@ -56,7 +56,6 @@ export interface ItemCreate {
   note_body?: string;
   tags?: string[];
   status?: ItemStatus;
-  source?: string;
   notes_md?: string;
 }
 
@@ -64,7 +63,6 @@ export interface ItemPatch {
   title?: string;
   notes_md?: string;
   status?: ItemStatus;
-  source?: string;
   tags?: string[];
   description?: string;
   thumbnail_url?: string | null;
@@ -79,6 +77,8 @@ export interface Space {
   name: string;
   namespaces: string[];
   tags: string[];
+  // Per-Space display labels for the 3 active statuses; null = canonical defaults.
+  labels: Record<string, string> | null;
   created_at: string;
 }
 
@@ -142,6 +142,8 @@ export const api = {
   restoreItem: (id: number) => req<Item>("POST", `/items/${id}/restore`),
   purgeItem: (id: number) => req<void>("DELETE", `/items/${id}/purge`),
   refreshItem: (id: number) => req<Item>("POST", `/items/${id}/refresh`),
+  // Records one explicit open-the-resource click (usage metrics). Fire-and-forget.
+  pingAccess: (id: number) => req<void>("POST", `/items/${id}/access`),
 
   listTags: (prefix?: string) =>
     req<Tag[]>("GET", `/tags${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""}`),
@@ -160,8 +162,10 @@ export const api = {
   restoreRevision: (itemId: number, revId: number) => req<Item>("POST", `/items/${itemId}/revisions/${revId}/restore`),
 
   listSpaces: () => req<Space[]>("GET", `/spaces`),
-  createSpace: (name: string, namespaces: string[], tags: string[]) => req<Space>("POST", `/spaces`, { name, namespaces, tags }),
-  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[] }) => req<Space>("PATCH", `/spaces/${id}`, data),
+  createSpace: (name: string, namespaces: string[], tags: string[], labels?: Record<string, string> | null) =>
+    req<Space>("POST", `/spaces`, { name, namespaces, tags, labels }),
+  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[]; labels?: Record<string, string> | null }) =>
+    req<Space>("PATCH", `/spaces/${id}`, data),
   deleteSpace: (id: number) => req<void>("DELETE", `/spaces/${id}`),
 };
 

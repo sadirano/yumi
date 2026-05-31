@@ -1,11 +1,15 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, Space } from "../api/client";
+import { api, ItemStatus, Space } from "../api/client";
+import { DEFAULT_LABELS } from "../lib/status";
 import TagInput from "./TagInput";
+
+// The 3 active states get custom per-Space labels; archived stays fixed.
+const LABELLED_STATUSES: ItemStatus[] = ["plan", "in-progress", "completed"];
 
 interface Props {
   space?: Space;
-  onSave: (name: string, namespaces: string[], tags: string[]) => void;
+  onSave: (name: string, namespaces: string[], tags: string[], labels: Record<string, string> | null) => void;
   onDelete?: () => void;
   onClose: () => void;
 }
@@ -14,6 +18,7 @@ export default function SpaceDialog({ space, onSave, onDelete, onClose }: Props)
   const [name, setName] = useState(space?.name ?? "");
   const [selectedNs, setSelectedNs] = useState<Set<string>>(new Set(space?.namespaces ?? []));
   const [requiredTags, setRequiredTags] = useState<string[]>(space?.tags ?? []);
+  const [labels, setLabels] = useState<Record<string, string>>(space?.labels ?? {});
   const [nsInput, setNsInput] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -49,7 +54,16 @@ export default function SpaceDialog({ space, onSave, onDelete, onClose }: Props)
 
   function handleSave() {
     if (!name.trim()) return;
-    onSave(name.trim(), Array.from(selectedNs), requiredTags);
+    // Keep only non-empty trimmed labels. Send the (possibly empty) map as-is:
+    // an empty object is what the backend treats as "clear to defaults". Sending
+    // null instead would trip update_space's `is not None` guard and skip the
+    // clear, leaving stale labels behind.
+    const cleaned: Record<string, string> = {};
+    for (const s of LABELLED_STATUSES) {
+      const v = labels[s]?.trim();
+      if (v) cleaned[s] = v;
+    }
+    onSave(name.trim(), Array.from(selectedNs), requiredTags, cleaned);
   }
 
   return (
@@ -129,6 +143,25 @@ export default function SpaceDialog({ space, onSave, onDelete, onClose }: Props)
               ))}
             </div>
           )}
+        </div>
+
+        {/* Status labels */}
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Status labels</label>
+          <p className="text-[10px] text-zinc-500 mb-2">Rename the 3 active states for this space so they read naturally (e.g. <span className="font-mono">to read / reading / read</span>). Leave blank to use the defaults. <span className="font-mono">archived</span> is fixed.</p>
+          <div className="space-y-1.5">
+            {LABELLED_STATUSES.map(s => (
+              <div key={s} className="flex items-center gap-2">
+                <span className="w-24 shrink-0 text-xs text-zinc-500">{DEFAULT_LABELS[s]}</span>
+                <input
+                  value={labels[s] ?? ""}
+                  onChange={e => setLabels(prev => ({ ...prev, [s]: e.target.value }))}
+                  placeholder={DEFAULT_LABELS[s]}
+                  className="flex-1 min-w-0 bg-zinc-800 border border-zinc-700 rounded px-2.5 py-1.5 text-xs outline-none focus:border-zinc-500"
+                />
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Actions */}

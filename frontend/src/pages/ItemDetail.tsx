@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { api, ItemStatus, RelatedLink, Revision } from "../api/client";
 import { isSerialized } from "../lib/serialized";
 import { anilistUrl } from "../lib/anilist";
+import { DEFAULT_LABELS, STATUSES } from "../lib/status";
 import TagInput from "../components/TagInput";
 
 type Layout = "split" | "notes";
@@ -24,8 +25,7 @@ export default function ItemDetail() {
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
   const [tags, setTags] = useState<string[]>([]);
-  const [source, setSource] = useState("");
-  const [status, setStatus] = useState<ItemStatus>("to-watch");
+  const [status, setStatus] = useState<ItemStatus>("plan");
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
   const [anilistId, setAnilistId] = useState<number | null>(null);
@@ -61,7 +61,6 @@ export default function ItemDetail() {
     setNotes(item.notes_md);
     setTitle(item.title);
     setTags(item.tags.map(t => t.name));
-    setSource(item.source);
     setStatus(item.status);
     setProgress(item.progress);
     setTotal(item.total);
@@ -73,7 +72,7 @@ export default function ItemDetail() {
   }, [item?.id]);
 
   const save = useMutation({
-    mutationFn: (data: { title: string; notes_md: string; tags: string[]; source: string; status: ItemStatus; progress: number; total: number | null; anilist_id: number | null; related_links: RelatedLink[] }) =>
+    mutationFn: (data: { title: string; notes_md: string; tags: string[]; status: ItemStatus; progress: number; total: number | null; anilist_id: number | null; related_links: RelatedLink[] }) =>
       api.patchItem(itemId, data),
     onMutate: () => setSaveStatus("saving"),
     onSuccess: () => {
@@ -89,13 +88,13 @@ export default function ItemDetail() {
     if (!ready.current) return;
     const t = setTimeout(() => {
       save.mutate({
-        title, notes_md: notes, tags, source, status, progress, total,
+        title, notes_md: notes, tags, status, progress, total,
         anilist_id: anilistId,
         related_links: relatedLinks.filter(l => l.url.trim()),
       });
     }, 800);
     return () => clearTimeout(t);
-  }, [title, notes, tags, source, status, progress, total, anilistId, relatedLinks]);
+  }, [title, notes, tags, status, progress, total, anilistId, relatedLinks]);
 
   const del = useMutation({
     mutationFn: () => api.deleteItem(itemId),
@@ -109,7 +108,6 @@ export default function ItemDetail() {
       setTitle(updated.title);
       setNotes(updated.notes_md);
       setTags(updated.tags.map(t => t.name));
-      setSource(updated.source);
       setStatus(updated.status);
       setProgress(updated.progress);
       setTotal(updated.total);
@@ -121,6 +119,14 @@ export default function ItemDetail() {
       setHistoryOpen(false);
     },
   });
+
+  // An explicit open-the-resource click counts as one access (usage metrics).
+  // Fire-and-forget, then refresh the item so the displayed count stays current.
+  function pingAccess() {
+    api.pingAccess(itemId)
+      .then(() => qc.invalidateQueries({ queryKey: ["item", itemId] }))
+      .catch(() => {});
+  }
 
   async function openHistory() {
     setMenuOpen(false);
@@ -195,7 +201,7 @@ export default function ItemDetail() {
       ) : (
         <>
           {item.kind === "youtube" && item.url ? (
-            <a href={item.url} target="_blank" rel="noreferrer" className="relative w-full h-full block group">
+            <a href={item.url} target="_blank" rel="noreferrer" onClick={pingAccess} className="relative w-full h-full block group">
               {item.thumbnail_url
                 ? <img src={item.thumbnail_url} alt={item.title} className="w-full h-full object-contain" />
                 : <div className="w-full h-full bg-zinc-800" />
@@ -209,7 +215,7 @@ export default function ItemDetail() {
           ) : item.thumbnail_url ? (
             <img src={item.thumbnail_url} alt={item.title} className="w-full h-full object-contain" />
           ) : item.url ? (
-            <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-400 underline">Open source</a>
+            <a href={item.url} target="_blank" rel="noreferrer" onClick={pingAccess} className="text-blue-400 underline">Open source</a>
           ) : (
             <span className="text-zinc-500 text-sm">No preview</span>
           )}
@@ -228,7 +234,12 @@ export default function ItemDetail() {
     <div className="flex items-center gap-2 text-xs text-zinc-400">
       {item.channel && <span>{item.channel}</span>}
       {item.published_at && <span>- {item.published_at}</span>}
-      {item.url && <a href={item.url} target="_blank" rel="noreferrer" className="text-blue-400 hover:underline ml-auto">open</a>}
+      {item.access_count > 0 && (
+        <span title={item.last_accessed_at ? `last opened ${fmtTime(item.last_accessed_at)}` : undefined}>
+          opened {item.access_count}×{item.last_accessed_at ? ` · ${fmtTime(item.last_accessed_at)}` : ""}
+        </span>
+      )}
+      {item.url && <a href={item.url} target="_blank" rel="noreferrer" onClick={pingAccess} className="text-blue-400 hover:underline ml-auto">open</a>}
     </div>
   );
 
@@ -303,21 +314,12 @@ export default function ItemDetail() {
         )}
         <TagInput value={tags} onChange={setTags} />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">status</label>
-          <select value={status} onChange={e => setStatus(e.target.value as ItemStatus)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm">
-            <option value="to-watch">to-watch</option>
-            <option value="watching">watching</option>
-            <option value="watched">watched</option>
-            <option value="archived">archived</option>
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">source</label>
-          <input value={source} onChange={e => setSource(e.target.value)} className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm" />
-        </div>
+      <div>
+        <label className="text-xs text-zinc-400 mb-1 block">status</label>
+        <select value={status} onChange={e => setStatus(e.target.value as ItemStatus)}
+          className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm">
+          {STATUSES.map(s => <option key={s} value={s}>{DEFAULT_LABELS[s]}</option>)}
+        </select>
       </div>
       {isSerialized(tags) && (
         <div className="grid grid-cols-2 gap-3">

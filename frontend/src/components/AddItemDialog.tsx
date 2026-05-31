@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError, ItemCreate, ItemStatus } from "../api/client";
+import { DEFAULT_LABELS, STATUSES } from "../lib/status";
 import TagInput from "./TagInput";
 
 interface Props {
@@ -17,8 +18,7 @@ export default function AddItemDialog({ onClose }: Props) {
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState("");
   const [tags, setTags] = useState<string[]>([]);
-  const [source, setSource] = useState("");
-  const [status, setStatus] = useState<ItemStatus>("to-watch");
+  const [status, setStatus] = useState<ItemStatus>("plan");
   const [dupId, setDupId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +45,7 @@ export default function AddItemDialog({ onClose }: Props) {
 
   function submit() {
     setError(null); setDupId(null);
-    const base = { tags, source, status };
+    const base = { tags, status };
     if (mode === "url") m.mutate({ ...base, url });
     else if (mode === "file") m.mutate({ ...base, file_path: filePath });
     else m.mutate({ ...base, note_title: noteTitle, note_body: noteBody });
@@ -111,22 +111,12 @@ export default function AddItemDialog({ onClose }: Props) {
           <TagInput value={tags} onChange={setTags} />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-zinc-400 mb-1 block">status</label>
-            <select value={status} onChange={e => setStatus(e.target.value as ItemStatus)}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm">
-              <option value="to-watch">to-watch</option>
-              <option value="watching">watching</option>
-              <option value="watched">watched</option>
-              <option value="archived">archived</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-zinc-400 mb-1 block">source</label>
-            <input value={source} onChange={e => setSource(e.target.value)} placeholder="reddit / friend / …"
-              className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm" />
-          </div>
+        <div className="mb-3">
+          <label className="text-xs text-zinc-400 mb-1 block">status</label>
+          <select value={status} onChange={e => setStatus(e.target.value as ItemStatus)}
+            className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1.5 text-sm">
+            {STATUSES.map(s => <option key={s} value={s}>{DEFAULT_LABELS[s]}</option>)}
+          </select>
         </div>
 
         {error && (

@@ -37,6 +37,7 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
   const [activeIdx, setActiveIdx] = useState(-1);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [browseFilter, setBrowseFilter] = useState("");
+  const [copied, setCopied] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -86,10 +87,18 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
     return () => { cancel = true; clearTimeout(t); };
   }, [input, value]);
 
-  function commit(name: string) {
-    const n = name.trim().toLowerCase().replace(/\s+/g, "-");
-    if (!n) return;
-    if (!value.includes(n)) onChange([...value, n]);
+  // Accepts a single tag or a comma-separated list (e.g. a pasted
+  // "music:loop, score:nice, year:2026"). Each part is normalized and added,
+  // skipping duplicates — so a paste no longer collapses into one mega-tag.
+  function commit(raw: string) {
+    const parts = raw
+      .split(",")
+      .map(s => s.trim().toLowerCase().replace(/\s+/g, "-"))
+      .filter(Boolean);
+    if (!parts.length) return;
+    const next = [...value];
+    for (const p of parts) if (!next.includes(p)) next.push(p);
+    if (next.length !== value.length) onChange(next);
     setInput("");
     setSuggestions([]);
     setActiveIdx(-1);
@@ -97,6 +106,16 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
 
   function remove(name: string) {
     onChange(value.filter(v => v !== name));
+  }
+
+  // Copy the current tags as a comma-separated list — the same shape the input
+  // accepts back, so a copied set can be pasted into another item.
+  function copyAll() {
+    if (!value.length) return;
+    navigator.clipboard.writeText(value.join(", ")).then(
+      () => { setCopied(true); setTimeout(() => setCopied(false), 1500); },
+      () => {},
+    );
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -157,10 +176,16 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
 
   return (
     <div ref={wrapRef} className="relative">
-      <div className="flex flex-wrap gap-1.5 p-2 bg-zinc-900 border border-zinc-800 rounded">
-        {value.map(t => (
-          <TagPill key={t} name={t} onRemove={() => remove(t)} />
-        ))}
+      {/* Chips live outside the field so the box is purely for typing. Kept above
+          the input so the suggestions dropdown still anchors directly below it. */}
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-1.5">
+          {value.map(t => (
+            <TagPill key={t} name={t} onRemove={() => remove(t)} />
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1.5 p-2 bg-zinc-900 border border-zinc-800 rounded">
         <input
           className="flex-1 min-w-32 bg-transparent outline-none text-sm"
           value={input}
@@ -169,7 +194,25 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => setFocused(false), 150)}
           onKeyDown={handleKeyDown}
+          onPaste={e => {
+            const text = e.clipboardData.getData("text");
+            if (text.includes(",")) { e.preventDefault(); commit(text); }
+          }}
         />
+        {value.length > 0 && (
+          <button
+            type="button"
+            onClick={copyAll}
+            title="Copy all tags"
+            className={`shrink-0 px-1.5 rounded text-xs border ${
+              copied
+                ? "bg-emerald-700 border-emerald-600 text-white"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800"
+            }`}
+          >
+            {copied ? "✓" : "⧉"}
+          </button>
+        )}
         {browsable && (
           <button
             type="button"

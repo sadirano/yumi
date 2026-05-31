@@ -220,8 +220,8 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
   const [editing, setEditing] = useState<Space | null>(null);
 
   const update = useMutation({
-    mutationFn: ({ id, name, namespaces, tags }: { id: number; name: string; namespaces: string[]; tags: string[] }) =>
-      api.updateSpace(id, { name, namespaces, tags }),
+    mutationFn: ({ id, name, namespaces, tags, labels }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null }) =>
+      api.updateSpace(id, { name, namespaces, tags, labels }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
   });
 
@@ -256,7 +256,7 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
       {editing && (
         <SpaceDialog
           space={editing}
-          onSave={(name, namespaces, tags) => update.mutate({ id: editing.id, name, namespaces, tags })}
+          onSave={(name, namespaces, tags, labels) => update.mutate({ id: editing.id, name, namespaces, tags, labels })}
           onDelete={() => del.mutate(editing.id)}
           onClose={() => setEditing(null)}
         />
@@ -277,8 +277,8 @@ export default function App() {
   });
 
   const createSpace = useMutation({
-    mutationFn: ({ name, namespaces, tags }: { name: string; namespaces: string[]; tags: string[] }) =>
-      api.createSpace(name, namespaces, tags),
+    mutationFn: ({ name, namespaces, tags, labels }: { name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null }) =>
+      api.createSpace(name, namespaces, tags, labels),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setCreatingSpace(false); },
   });
 
@@ -317,7 +317,7 @@ export default function App() {
       {adding && <AddItemDialog onClose={() => setAdding(false)} />}
       {creatingSpace && (
         <SpaceDialog
-          onSave={(name, namespaces, tags) => createSpace.mutate({ name, namespaces, tags })}
+          onSave={(name, namespaces, tags, labels) => createSpace.mutate({ name, namespaces, tags, labels })}
           onClose={() => setCreatingSpace(false)}
         />
       )}

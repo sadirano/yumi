@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { fmtDuration, Item, itemLink } from "../api/client";
+import { api, fmtDuration, Item, itemLink, Space } from "../api/client";
 import { isSerialized } from "../lib/serialized";
+import { STATUS_BADGE, STATUS_ICON, statusLabel } from "../lib/status";
 import TagInput, { renderTagName } from "./TagInput";
 
 export type Layout = "normal" | "big" | "detailed";
@@ -9,7 +10,9 @@ export type Layout = "normal" | "big" | "detailed";
 interface Props {
   item: Item;
   layout?: Layout;
-  onDelete?: (id: number) => void;
+  // The active Space (if any) supplies custom status labels. Deletion is
+  // deliberately not a card action — it lives on the detail page only.
+  space?: Space | null;
   onToggleWatched?: (item: Item) => void;
   onEditTags?: (item: Item, tags: string[]) => void;
   onSetProgress?: (item: Item, progress: number) => void;
@@ -40,27 +43,6 @@ function ProgressBadge({ item }: { item: Item }) {
     </div>
   );
 }
-
-const statusBadge: Record<string, string> = {
-  "to-watch": "bg-blue-600/30 text-blue-200",
-  "watching": "bg-amber-500/30 text-amber-200",
-  "watched":  "bg-emerald-600/30 text-emerald-200",
-  "archived": "bg-zinc-700 text-zinc-300",
-};
-
-const nextStatus: Record<string, string> = {
-  "to-watch": "watching",
-  "watching": "watched",
-  "watched":  "to-watch",
-  "archived": "to-watch",
-};
-
-const statusIcon: Record<string, string> = {
-  "to-watch": "▶",
-  "watching": "✓",
-  "watched":  "↺",
-  "archived": "↺",
-};
 
 /** Popover for editing an item's tags inline from the grid. Keeps edits local
  *  and commits once (on Done or click-outside) so we don't spam PATCH calls. */
@@ -106,31 +88,45 @@ function TagEditorPopover({ item, onSave, onClose, className }: {
   );
 }
 
-export default function ItemCard({ item, layout = "normal", onDelete, onToggleWatched, onEditTags, onSetProgress }: Props) {
+export default function ItemCard({ item, layout = "normal", space, onToggleWatched, onEditTags, onSetProgress }: Props) {
   const [editingTags, setEditingTags] = useState(false);
   const link = itemLink(item);
   // A counter only makes sense for serialized content (anime/manga …), decided
   // by the item's tags. Plain videos/notes show no badge and no +1.
   const serialized = isSerialized(item.tags.map(t => t.name));
 
-  // Shared hover-button cluster. `variant` tunes colours to the layout's backdrop.
+  function btnBase(variant: "overlay" | "panel") {
+    const bg = variant === "overlay" ? "bg-black/80" : "bg-zinc-800";
+    // Fixed square footprint so the stacked glyph buttons (↗ 🏷 ✓ +) line up
+    // uniformly regardless of each character's natural width — no mono font needed.
+    return `text-xs w-6 h-6 flex items-center justify-center rounded ${bg}`;
+  }
+
+  // Always-visible "open the resource" button — the whole point is reaching the
+  // destination with zero friction, so it never hides behind hover. The click is
+  // also what we count as an access (usage metrics); fire-and-forget.
+  function OpenLink({ variant }: { variant: "overlay" | "panel" }) {
+    if (!link) return null;
+    return (
+      <a
+        href={link}
+        target="_blank"
+        rel="noreferrer"
+        onClick={() => { api.pingAccess(item.id).catch(() => {}); }}
+        className={`${btnBase(variant)} hover:bg-blue-700 text-center`}
+        title="Open link"
+      >
+        ↗
+      </a>
+    );
+  }
+
+  // Secondary, hover-only cluster. Destructive actions are intentionally absent
+  // (delete lives on the detail page).
   function ActionButtons({ variant }: { variant: "overlay" | "panel" }) {
-    const base = variant === "overlay"
-      ? "text-xs px-1.5 py-0.5 rounded bg-black/80"
-      : "text-xs px-1.5 py-0.5 rounded bg-zinc-800";
+    const base = btnBase(variant);
     return (
       <>
-        {link && (
-          <a
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            className={`${base} hover:bg-blue-700 text-center`}
-            title="Open link"
-          >
-            ↗
-          </a>
-        )}
         {onEditTags && (
           <button
             type="button"
@@ -150,9 +146,9 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
             type="button"
             onClick={() => onToggleWatched(item)}
             className={`${base} hover:bg-emerald-700`}
-            title="Toggle watched"
+            title="Advance status"
           >
-            {statusIcon[item.status] ?? "✓"}
+            {STATUS_ICON[item.status] ?? "✓"}
           </button>
         )}
         {onSetProgress && serialized && (
@@ -169,17 +165,7 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
             className={`${base} ${isFinished(item) ? "opacity-40 cursor-not-allowed" : "hover:bg-blue-700"}`}
             title={isFinished(item) ? "Complete" : "Add one (episode / chapter)"}
           >
-            +1
-          </button>
-        )}
-        {onDelete && (
-          <button
-            type="button"
-            onClick={() => onDelete(item.id)}
-            className={`${base} hover:bg-red-700`}
-            title="Move to trash"
-          >
-            🗑
+            +
           </button>
         )}
       </>
@@ -216,8 +202,8 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
             </div>
             <div className="flex-1 min-w-0 p-3 flex flex-col gap-1.5">
               <div className="flex items-start gap-2 flex-wrap">
-                <span className={`flex-shrink-0 px-1.5 py-0.5 text-[10px] uppercase rounded ${statusBadge[item.status]}`}>
-                  {item.status}
+                <span className={`flex-shrink-0 px-1.5 py-0.5 text-[10px] uppercase rounded ${STATUS_BADGE[item.status]}`}>
+                  {statusLabel(item.status, space)}
                 </span>
                 <span className="text-sm font-medium line-clamp-2 group-hover:text-white">{item.title || "(untitled)"}</span>
               </div>
@@ -232,8 +218,11 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
               {serialized && <ProgressBadge item={item} />}
             </div>
           </Link>
-          <div className="flex-shrink-0 px-2 flex flex-col gap-1 justify-center opacity-0 group-hover:opacity-100 transition">
-            <ActionButtons variant="panel" />
+          <div className="flex-shrink-0 px-2 flex flex-col gap-1 justify-center">
+            <OpenLink variant="panel" />
+            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition">
+              <ActionButtons variant="panel" />
+            </div>
           </div>
         </div>
         {tagEditor}
@@ -261,8 +250,8 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
                 {fmtDuration(item.duration_sec)}
               </span>
             ) : null}
-            <span className={`absolute top-1 left-1 px-1.5 py-0.5 text-[10px] uppercase rounded ${statusBadge[item.status]}`}>
-              {item.status}
+            <span className={`absolute top-1 left-1 px-1.5 py-0.5 text-[10px] uppercase rounded ${STATUS_BADGE[item.status]}`}>
+              {statusLabel(item.status, space)}
             </span>
             <div className="absolute bottom-1 left-1 flex flex-wrap gap-1 max-w-[80%]">
               {tags.map(t => (
@@ -278,8 +267,11 @@ export default function ItemCard({ item, layout = "normal", onDelete, onToggleWa
           </div>
         </Link>
       </div>
-      <div className="absolute top-1 right-1 hidden group-hover:flex flex-col gap-1">
-        <ActionButtons variant="overlay" />
+      <div className="absolute top-1 right-1 flex flex-col gap-1 items-end">
+        <OpenLink variant="overlay" />
+        <div className="hidden group-hover:flex flex-col gap-1 items-end">
+          <ActionButtons variant="overlay" />
+        </div>
       </div>
       {tagEditor}
     </div>
