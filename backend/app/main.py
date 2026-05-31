@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .backup import run_startup_backup
 from .crud import sweep_orphan_tags
 from .db import SessionLocal, init_db
 from .routers import items, saved_filters, spaces, tags, trash
@@ -25,6 +26,16 @@ else:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Snapshot the last-good DB *before* migrations run, so a bad migration is
+    # recoverable from the same day's backup (init_db applies DROP COLUMN and a
+    # status backfill). A pre-migration restore is self-healing: the next boot
+    # re-applies migrations to it.
+    try:
+        made = run_startup_backup()
+        if made:
+            print(f"[startup] db backup: created {', '.join(made)}")
+    except Exception as exc:  # a backup failure must never block startup
+        print(f"[startup] db backup skipped: {exc}")
     init_db()
     with SessionLocal() as db:
         removed = sweep_orphan_tags(db)
