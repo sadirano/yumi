@@ -1,0 +1,15 @@
+[Unit]
+Description=yumi daily SQLite snapshot + offsite sync
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=sadirano
+WorkingDirectory=/home/sadirano/projects/yumi/backend
+# 1) Consistent SQLite snapshot into <data_dir>/backups (daily + monthly, pruned).
+ExecStart=/home/sadirano/projects/yumi/.venv/bin/python -m app.backup
+# 2) Mirror the backups folder to Google Drive. Non-fatal (leading '-'): a sync
+#    failure must not mark the snapshot itself as failed. Configure the rclone
+#    remote first (see DEPLOY.md).
+ExecStart=-/usr/bin/rclone copy /home/sadirano/.local/share/sadirano-data/yumi/backups gdrive:yumi-backups

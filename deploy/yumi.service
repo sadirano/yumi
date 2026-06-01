@@ -1,0 +1,16 @@
+[Unit]
+Description=yumi - personal anime/media library tracker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sadirano
+WorkingDirectory=/home/sadirano/projects/yumi/backend
+# Bind localhost only: the tailnet reaches it via `tailscale serve`, never directly.
+ExecStart=/home/sadirano/projects/yumi/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

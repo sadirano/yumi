@@ -78,3 +78,19 @@ def run_startup_backup() -> list[str]:
             created.append(dest.name)
         _prune(dirpath, prefix, keep)
     return created
+
+
+def main() -> None:
+    """CLI entry so a scheduler (systemd timer/cron) can take snapshots without
+    booting the app. `python -m app.backup`. The app still runs this at startup
+    too, but as a long-lived service it may not restart for days, so the timer is
+    what actually keeps the daily/monthly windows current."""
+    created = run_startup_backup()
+    if created:
+        print(f"db backup: created {', '.join(created)}")
+    else:
+        print("db backup: snapshots already current")
+
+
+if __name__ == "__main__":
+    main()
