@@ -7,46 +7,42 @@ on viper are for your *other* public sites and are left untouched.
 
 Host: `sadirano@192.168.0.100` (`viper`), app at `~/projects/yumi`.
 
-> **The built frontend (`backend/app/static/`) is git-ignored and viper has no
-> Node.** So a plain `git clone` has no UI. Two ways to get the static:
-> **(A)** use the prebuilt copy already staged on viper at `~/yumi-transfer/static/`
-> (done for you — no Node), or **(B)** install Node and `npm run build`.
-> Steps below use (A).
-
 > **Steps needing `sudo`** require your password and are NOT run for you. Run
-> them yourself. The data transfer (library DB + prebuilt static) is already done.
+> them yourself. The data transfer (library DB + a prebuilt UI fallback) is done.
 
 ---
 
-## Already done for you
+## Already staged on viper for you
 
-- Library DB copied to `~/.local/share/sadirano-data/yumi/favorites.sqlite`
-  (consistent snapshot of the Windows library; migrations self-apply on boot).
-- Prebuilt frontend staged at `~/yumi-transfer/static/` (Node-free path).
+- Library DB at `~/.local/share/sadirano-data/yumi/favorites.sqlite`
+  (consistent snapshot of the Windows library — 17 items, 110 revisions;
+  migrations self-apply on first boot).
+- Prebuilt UI fallback at `~/yumi-transfer/static/` — only needed if you skip the
+  `npm run build` step. viper *has* Node, so building from the clone is simplest.
 
-## 1. Clone + assemble (no sudo)
+> Leftover `~/projects/yumi_old/` is debris from an earlier transfer attempt and
+> can be deleted (`chmod -R u+w ~/projects/yumi_old && rm -rf ~/projects/yumi_old`).
+
+## 1. Clone + build (no sudo)
 
 ```bash
 cd ~/projects
 git clone https://github.com/sadirano/yumi.git
 cd yumi
 
-# Drop in the prebuilt UI (git-ignored, so not in the clone):
-mkdir -p backend/app/static
-cp -r ~/yumi-transfer/static/. backend/app/static/
+# Frontend (viper has Node) -> builds into backend/app/static, which is git-ignored:
+cd frontend && npm install && npm run build && cd ..
+# Fallback if you'd rather not build: cp -r ~/yumi-transfer/static/. backend/app/static/
 
 # Python venv + deps:
 python3 -m venv ~/projects/yumi/.venv
 ~/projects/yumi/.venv/bin/python -m pip install --upgrade pip
 ~/projects/yumi/.venv/bin/python -m pip install -e backend
 
-# Smoke test (Ctrl-C after you see "Application startup complete"):
+# Smoke test (Ctrl-C after "Application startup complete"):
 ~/projects/yumi/.venv/bin/python -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8765
-# in another shell: curl -s http://127.0.0.1:8765/api/health
+# elsewhere: curl -s http://127.0.0.1:8765/api/health
 ```
-
-> **(Alternative B — build with Node instead of step's `cp`)**
-> `sudo apt-get install -y nodejs npm && cd frontend && npm install && npm run build && cd ..`
 
 ## 2. (sudo) systemd: run the app + daily backup
 
@@ -111,8 +107,7 @@ sudo systemctl restart systemd-logind
 
 ```bash
 cd ~/projects/yumi && git pull
-# refresh UI: either re-copy a freshly-built static, or (if Node installed) rebuild:
-#   cd frontend && npm run build && cd ..
+cd frontend && npm run build && cd ..        # refresh UI
 ~/projects/yumi/.venv/bin/python -m pip install -e backend -q
 sudo systemctl restart yumi
 ```
