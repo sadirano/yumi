@@ -57,8 +57,8 @@ function OverflowMenu() {
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("pointerdown", onDoc);
+    return () => document.removeEventListener("pointerdown", onDoc);
   }, [open]);
 
   return (
@@ -179,8 +179,8 @@ function SpaceMenu({
     function onDoc(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("pointerdown", onDoc);
+    return () => document.removeEventListener("pointerdown", onDoc);
   }, [open]);
 
   return (
@@ -265,9 +265,131 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
   );
 }
 
+function MobileNav({
+  spaces,
+  onClose,
+  onCreateSpace,
+}: {
+  spaces: Space[];
+  onClose: () => void;
+  onCreateSpace: () => void;
+}) {
+  const qc = useQueryClient();
+  const [sp] = useSearchParams();
+  const activeSpaceId = sp.get("space") ? Number(sp.get("space")) : null;
+  const [editing, setEditing] = useState<Space | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const update = useMutation({
+    mutationFn: ({ id, name, namespaces, tags, labels }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null }) =>
+      api.updateSpace(id, { name, namespaces, tags, labels }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
+  });
+
+  const del = useMutation({
+    mutationFn: (id: number) => api.deleteSpace(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
+  });
+
+  const linkClass = (active: boolean) =>
+    `block px-3 py-2.5 rounded text-sm ${active ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:text-zinc-100 active:bg-zinc-800"}`;
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <nav className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-zinc-900 border-r border-zinc-700 flex flex-col overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 flex-shrink-0">
+          <span className="font-semibold text-zinc-100">yumi</span>
+          <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100 p-1 -mr-1">✕</button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3 space-y-0.5">
+          <NavLink to="/" end onClick={onClose} className={({ isActive }) => linkClass(isActive)}>
+            Library
+          </NavLink>
+          {spaces.length > 0 && (
+            <div className="pt-3 pb-1">
+              <div className="text-[10px] uppercase text-zinc-500 tracking-wide px-3 pb-1.5">Spaces</div>
+              {spaces.map(space => (
+                <div key={space.id} className="flex items-center">
+                  <Link
+                    to={`/?space=${space.id}`}
+                    onClick={onClose}
+                    className={`flex-1 px-3 py-2.5 rounded-l text-sm ${activeSpaceId === space.id ? "bg-zinc-800 text-zinc-100" : "text-zinc-300 hover:text-zinc-100 active:bg-zinc-800"}`}
+                  >
+                    {space.name}
+                  </Link>
+                  <button
+                    onClick={() => setEditing(space)}
+                    className="px-3 py-2.5 rounded-r text-zinc-500 hover:text-zinc-300 text-xs"
+                    title="Edit space"
+                  >
+                    ⚙
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="flex-shrink-0 p-3 border-t border-zinc-800 space-y-0.5">
+          <button
+            onClick={() => { onClose(); onCreateSpace(); }}
+            className="w-full text-left px-3 py-2.5 rounded text-sm text-zinc-400 hover:text-zinc-100 active:bg-zinc-800"
+          >
+            + New space
+          </button>
+          <NavLink to="/trash" onClick={onClose} className={({ isActive }) => linkClass(isActive)}>
+            Trash
+          </NavLink>
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="w-full text-left px-3 py-2.5 rounded text-sm text-zinc-400 hover:text-zinc-100 active:bg-zinc-800"
+          >
+            Counter tags…
+          </button>
+        </div>
+      </nav>
+      {editing && (
+        <SpaceDialog
+          space={editing}
+          onSave={(name, namespaces, tags, labels) => update.mutate({ id: editing.id, name, namespaces, tags, labels })}
+          onDelete={() => del.mutate(editing.id)}
+          onClose={() => setEditing(null)}
+        />
+      )}
+      {settingsOpen && <CounterTagsDialog onClose={() => setSettingsOpen(false)} />}
+    </>
+  );
+}
+
+// Captures the browser's beforeinstallprompt so we can trigger it from a button.
+function useInstallPrompt() {
+  const [prompt, setPrompt] = useState<Event & { prompt(): Promise<void> } | null>(null);
+  const [installed, setInstalled] = useState(
+    () => window.matchMedia("(display-mode: standalone)").matches
+  );
+  useEffect(() => {
+    function onPrompt(e: Event) { e.preventDefault(); setPrompt(e as Event & { prompt(): Promise<void> }); }
+    function onInstalled() { setInstalled(true); setPrompt(null); }
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
+  }, []);
+  async function install() {
+    if (!prompt) return;
+    await prompt.prompt();
+    setPrompt(null);
+  }
+  return { canInstall: !!prompt && !installed, install, installed };
+}
+
 export default function App() {
   const [adding, setAdding] = useState(false);
   const [creatingSpace, setCreatingSpace] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { canInstall, install } = useInstallPrompt();
   const qc = useQueryClient();
 
   const { data: spaces = [] } = useQuery({
@@ -284,9 +406,18 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
-      <header className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2 flex-wrap">
+      <header className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2">
+        <button
+          className="md:hidden p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open navigation"
+        >
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M2 4.5h14M2 9h14M2 13.5h14"/>
+          </svg>
+        </button>
         <span className="font-semibold text-zinc-100">yumi</span>
-        <nav className="flex gap-1 ml-4 flex-wrap items-center">
+        <nav className="hidden md:flex gap-1 ml-4 flex-wrap items-center">
           <NavLink to="/" end className={navClass}>Library</NavLink>
           <SpaceNavItems spaces={spaces} />
           <button
@@ -298,7 +429,16 @@ export default function App() {
           </button>
         </nav>
         <div className="flex gap-1 ml-auto items-center">
-          <OverflowMenu />
+          {canInstall && (
+            <button
+              onClick={install}
+              className="px-3 py-1.5 rounded border border-zinc-600 text-zinc-300 hover:text-zinc-100 hover:border-zinc-400 text-sm"
+              title="Install yumi as an app"
+            >
+              Install
+            </button>
+          )}
+          <div className="hidden md:block"><OverflowMenu /></div>
           <button
             onClick={() => setAdding(true)}
             className="ml-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium"
@@ -314,6 +454,13 @@ export default function App() {
           <Route path="/trash" element={<Trash />} />
         </Routes>
       </main>
+      {mobileNavOpen && (
+        <MobileNav
+          spaces={spaces}
+          onClose={() => setMobileNavOpen(false)}
+          onCreateSpace={() => { setMobileNavOpen(false); setCreatingSpace(true); }}
+        />
+      )}
       {adding && <AddItemDialog onClose={() => setAdding(false)} />}
       {creatingSpace && (
         <SpaceDialog

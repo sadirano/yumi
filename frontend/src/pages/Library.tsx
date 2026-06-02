@@ -27,6 +27,7 @@ function LayoutBtn({ active, title, onClick, children }: {
 export default function Library() {
   const [sp] = useSearchParams();
   const qc = useQueryClient();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [layout, setLayout] = useState<Layout>(() =>
     (localStorage.getItem("library-layout") as Layout) || "normal"
   );
@@ -96,10 +97,22 @@ export default function Library() {
 
   return (
     <div className="flex h-[calc(100vh-2.75rem)]">
-      <FilterSidebar />
+      <FilterSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 overflow-y-auto">
         <div className="sticky top-0 bg-zinc-950/95 backdrop-blur z-10 px-4 py-2 border-b border-zinc-800 flex items-center justify-between">
-          <span className="text-sm text-zinc-400">{items.length} item{items.length === 1 ? "" : "s"}</span>
+          <div className="flex items-center gap-2">
+            <button
+              className="md:hidden p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+              onClick={() => setSidebarOpen(true)}
+              title="Filters"
+              aria-label="Open filters"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M1 3.5h14M4 8h8M6.5 12.5h3"/>
+              </svg>
+            </button>
+            <span className="text-sm text-zinc-400">{items.length} item{items.length === 1 ? "" : "s"}</span>
+          </div>
           <div className="flex gap-0.5">
             <LayoutBtn active={layout === "normal"} title="Normal grid" onClick={() => changeLayout("normal")}>
               {/* 3x3 small grid */}

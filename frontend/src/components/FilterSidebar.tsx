@@ -44,7 +44,7 @@ function Section({ id, title, defaultOpen = true, children }: {
   );
 }
 
-export default function FilterSidebar() {
+export default function FilterSidebar({ open = false, onClose }: { open?: boolean; onClose?: () => void }) {
   const [sp, setSp] = useSearchParams();
   const [q, setQ] = useState(sp.get("q") ?? "");
   const [tagExpr, setTagExpr] = useState(sp.get("tagExpr") ?? "");
@@ -226,7 +226,20 @@ export default function FilterSidebar() {
   }
 
   return (
-    <aside className="w-64 shrink-0 border-r border-zinc-800 p-3 space-y-4 text-sm overflow-y-auto">
+    <>
+      {open && (
+        <div className="fixed inset-0 z-40 bg-black/50 md:hidden" onClick={onClose} />
+      )}
+    <aside className={[
+        "w-64 shrink-0 border-r border-zinc-800 p-3 space-y-4 text-sm overflow-y-auto bg-zinc-950",
+        "fixed inset-y-0 left-0 z-50 transition-transform duration-200",
+        open ? "translate-x-0" : "-translate-x-full",
+        "md:static md:inset-auto md:translate-x-0 md:transition-none",
+      ].join(" ")}>
+      <div className="flex items-center justify-between md:hidden -mt-1 mb-2">
+        <span className="text-xs uppercase tracking-wide text-zinc-500">Filters</span>
+        <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100 p-1 -mr-1">✕</button>
+      </div>
       {spaceId != null && (
         <Section id="saved-filters" title="Saved filters">
           {savedFilters.length === 0 && !saving && (
@@ -375,5 +388,6 @@ export default function FilterSidebar() {
         clear filters
       </button>
     </aside>
+    </>
   );
 }

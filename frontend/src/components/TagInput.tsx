@@ -40,6 +40,10 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
   const [copied, setCopied] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Tracks latest input value for the blur handler's setTimeout closure, so a
+  // suggestion mousedown that clears the input is visible when the timer fires.
+  const pendingInput = useRef(input);
+  pendingInput.current = input;
 
   // All tags, grouped by namespace (AniList-style browse panel). Shares the
   // ["tags"] query cache with FilterSidebar so we don't refetch.
@@ -192,7 +196,7 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
           placeholder={placeholder ?? "add tag… (namespace:value)"}
           onChange={e => setInput(e.target.value)}
           onFocus={() => setFocused(true)}
-          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          onBlur={() => setTimeout(() => { setFocused(false); commit(pendingInput.current); }, 150)}
           onKeyDown={handleKeyDown}
           onPaste={e => {
             const text = e.clipboardData.getData("text");
