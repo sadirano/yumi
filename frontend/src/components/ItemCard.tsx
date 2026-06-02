@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { api, fmtDuration, Item, itemLink, Space } from "../api/client";
 import { isSerialized } from "../lib/serialized";
 import { STATUS_BADGE, STATUS_ICON, statusLabel } from "../lib/status";
@@ -90,6 +90,7 @@ function TagEditorPopover({ item, onSave, onClose, className }: {
 
 export default function ItemCard({ item, layout = "normal", space, onToggleWatched, onEditTags, onSetProgress }: Props) {
   const [editingTags, setEditingTags] = useState(false);
+  const location = useLocation();
   const link = itemLink(item);
   // A counter only makes sense for serialized content (anime/manga …), decided
   // by the item's tags. Plain videos/notes show no badge and no +1.
@@ -185,7 +186,7 @@ export default function ItemCard({ item, layout = "normal", space, onToggleWatch
     return (
       <div className="group relative">
         <div className="bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800 hover:border-zinc-600 transition flex">
-          <Link to={`/items/${item.id}`} className="flex flex-1 min-w-0">
+          <Link to={`/items/${item.id}`} state={{ from: location.search }} className="flex flex-1 min-w-0">
             <div className="relative w-44 flex-shrink-0 bg-zinc-800 self-stretch">
               {item.thumbnail_url ? (
                 <img src={item.thumbnail_url} alt="" loading="lazy" className="w-full h-full object-cover" />
@@ -238,7 +239,7 @@ export default function ItemCard({ item, layout = "normal", space, onToggleWatch
   return (
     <div className="group relative">
       <div className="bg-zinc-900 rounded-lg overflow-hidden border border-zinc-800 hover:border-zinc-600 transition">
-        <Link to={`/items/${item.id}`} className="block">
+        <Link to={`/items/${item.id}`} state={{ from: location.search }} className="block">
           <div className="relative aspect-video bg-zinc-800">
             {item.thumbnail_url ? (
               <img src={item.thumbnail_url} alt="" loading="lazy" className="w-full h-full object-cover" />

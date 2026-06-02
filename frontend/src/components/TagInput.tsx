@@ -7,6 +7,7 @@ interface Props {
   onChange: (next: string[]) => void;
   placeholder?: string;
   browsable?: boolean;
+  allowedNamespaces?: string[];
 }
 
 function TagPill({ name, onRemove }: { name: string; onRemove?: () => void }) {
@@ -30,7 +31,12 @@ export function renderTagName(name: string) {
   return <><span className="text-zinc-500">{name.slice(0, colon + 1)}</span>{name.slice(colon + 1)}</>;
 }
 
-export default function TagInput({ value, onChange, placeholder, browsable = true }: Props) {
+function tagNamespace(name: string): string {
+  const colon = name.indexOf(":");
+  return colon > 0 ? name.slice(0, colon) : "";
+}
+
+export default function TagInput({ value, onChange, placeholder, browsable = true, allowedNamespaces }: Props) {
   const [input, setInput] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [focused, setFocused] = useState(false);
@@ -59,8 +65,8 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
     const map: Record<string, typeof allTags> = {};
     for (const t of allTags) {
       if (needle && !t.name.toLowerCase().includes(needle)) continue;
-      const colon = t.name.indexOf(":");
-      const ns = colon > 0 ? t.name.slice(0, colon) : "";
+      const ns = tagNamespace(t.name);
+      if (allowedNamespaces?.length && !allowedNamespaces.includes(ns)) continue;
       (map[ns] ??= []).push(t);
     }
     for (const ns in map) {
@@ -84,7 +90,12 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
     const t = setTimeout(async () => {
       const tags = await api.listTags(input.trim());
       if (!cancel) {
-        setSuggestions(tags.map(t => t.name).filter(n => !value.includes(n)).slice(0, 8));
+        setSuggestions(
+          tags.map(t => t.name)
+            .filter(n => !value.includes(n))
+            .filter(n => !allowedNamespaces?.length || allowedNamespaces.includes(tagNamespace(n)))
+            .slice(0, 8)
+        );
         setActiveIdx(-1);
       }
     }, 100);

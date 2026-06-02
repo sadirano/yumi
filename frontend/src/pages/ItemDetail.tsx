@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
-import { api, ItemStatus, RelatedLink, Revision } from "../api/client";
+import { api, ItemStatus, RelatedLink, Revision, Space } from "../api/client";
 import { isSerialized } from "../lib/serialized";
 import { anilistUrl } from "../lib/anilist";
 import { DEFAULT_LABELS, STATUSES } from "../lib/status";
@@ -15,6 +15,16 @@ export default function ItemDetail() {
   const itemId = Number(id);
   const qc = useQueryClient();
   const nav = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from ?? "/";
+  const fromSpaceId = from ? Number(new URLSearchParams(from).get("space")) || null : null;
+
+  const { data: spaces = [] } = useQuery<Space[]>({
+    queryKey: ["spaces"],
+    queryFn: api.listSpaces,
+    staleTime: 60_000,
+  });
+  const activeSpace = fromSpaceId != null ? spaces.find(s => s.id === fromSpaceId) ?? null : null;
 
   const { data: item, isLoading } = useQuery({
     queryKey: ["item", itemId],
@@ -31,7 +41,7 @@ export default function ItemDetail() {
   const [anilistId, setAnilistId] = useState<number | null>(null);
   const [editingAnilist, setEditingAnilist] = useState(false);
   const [relatedLinks, setRelatedLinks] = useState<RelatedLink[]>([]);
-  const [preview, setPreview] = useState(false);
+  const [preview, setPreview] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [layout, setLayout] = useState<Layout>("split");
   const ready = useRef(false);
@@ -169,11 +179,55 @@ export default function ItemDetail() {
     },
   });
 
+  const [editingLinkIdx, setEditingLinkIdx] = useState<number | null>(null);
+
   function updateLink(i: number, field: "label" | "url", val: string) {
     setRelatedLinks(prev => prev.map((l, j) => (j === i ? { ...l, [field]: val } : l)));
   }
-  const addLink = () => setRelatedLinks(prev => [...prev, { label: "", url: "" }]);
-  const removeLink = (i: number) => setRelatedLinks(prev => prev.filter((_, j) => j !== i));
+  function addLink() {
+    setRelatedLinks(prev => { setEditingLinkIdx(prev.length); return [...prev, { label: "", url: "" }]; });
+  }
+  function removeLink(i: number) {
+    setRelatedLinks(prev => prev.filter((_, j) => j !== i));
+    setEditingLinkIdx(null);
+  }
+
+  function faviconUrl(url: string): string {
+    try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`; }
+    catch { return ""; }
+  }
+  function linkLabel(lnk: RelatedLink): string {
+    if (lnk.label) return lnk.label;
+    try { return new URL(lnk.url).hostname.replace(/^www\./, ""); }
+    catch { return lnk.url; }
+  }
+
+  async function uploadImage(file: File): Promise<string> {
+    const { url } = await api.uploadItemFile(itemId, file);
+    return url;
+  }
+
+  async function handleThumbPaste(e: React.ClipboardEvent) {
+    const file = Array.from(e.clipboardData.items)
+      .find(it => it.kind === "file" && it.type.startsWith("image/"))
+      ?.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    const url = await uploadImage(file);
+    setThumbInput(url);
+  }
+
+  async function handleNotesPaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const file = Array.from(e.clipboardData.items)
+      .find(it => it.kind === "file" && it.type.startsWith("image/"))
+      ?.getAsFile();
+    if (!file) return;
+    e.preventDefault();
+    const start = e.currentTarget.selectionStart;
+    const end = e.currentTarget.selectionEnd;
+    const url = await uploadImage(file);
+    setNotes(prev => `${prev.slice(0, start)}![](${url})${prev.slice(end)}`);
+  }
 
   if (isLoading || !item) return <div className="p-6 text-zinc-500">Loading...</div>;
 
@@ -188,11 +242,12 @@ export default function ItemDetail() {
             autoFocus
             value={thumbInput}
             onChange={e => setThumbInput(e.target.value)}
+            onPaste={handleThumbPaste}
             onKeyDown={e => {
               if (e.key === "Enter") patchThumb.mutate(thumbInput.trim());
               if (e.key === "Escape") setThumbEdit(false);
             }}
-            placeholder="Paste image URL…"
+            placeholder="Paste image or URL…"
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm outline-none focus:border-zinc-500"
           />
           <a href="https://www.base64-image.de/" target="_blank" rel="noreferrer" className="text-xs text-zinc-400 hover:text-zinc-200 underline text-center">
@@ -269,8 +324,10 @@ export default function ItemDetail() {
         </div>
       ) : (
         <textarea
+          autoFocus
           value={notes}
           onChange={e => setNotes(e.target.value)}
+          onPaste={handleNotesPaste}
           className="flex-1 resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm"
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
@@ -291,8 +348,10 @@ export default function ItemDetail() {
         </div>
       ) : (
         <textarea
+          autoFocus
           value={notes}
           onChange={e => setNotes(e.target.value)}
+          onPaste={handleNotesPaste}
           className="w-full resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm min-h-[12rem]"
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
@@ -348,7 +407,7 @@ export default function ItemDetail() {
             )}
           </div>
         )}
-        <TagInput value={tags} onChange={setTags} />
+        <TagInput value={tags} onChange={setTags} allowedNamespaces={activeSpace?.namespaces} />
       </div>
       {item.kind !== "note" && (
         <div>
@@ -425,26 +484,50 @@ export default function ItemDetail() {
       )}
       <div>
         <label className="text-xs text-zinc-400 mb-1 block">related links</label>
-        <div className="space-y-1.5">
+        <div className="space-y-1">
           {relatedLinks.map((lnk, i) => (
-            <div key={i} className="flex items-center gap-1.5">
-              <input
-                value={lnk.label}
-                onChange={e => updateLink(i, "label", e.target.value)}
-                placeholder="label"
-                className="w-28 shrink-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
-              />
-              <input
-                value={lnk.url}
-                onChange={e => updateLink(i, "url", e.target.value)}
-                placeholder="https://…"
-                className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
-              />
-              {lnk.url.trim() && (
-                <a href={lnk.url} target="_blank" rel="noreferrer" className="text-zinc-400 hover:text-blue-400 text-sm" title="open">↗</a>
-              )}
-              <button type="button" onClick={() => removeLink(i)} className="text-zinc-600 hover:text-red-400 text-sm" title="remove">✕</button>
-            </div>
+            editingLinkIdx === i ? (
+              <div key={i} className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={lnk.label}
+                  onChange={e => updateLink(i, "label", e.target.value)}
+                  placeholder="label"
+                  className="w-24 shrink-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm"
+                />
+                <input
+                  value={lnk.url}
+                  onChange={e => updateLink(i, "url", e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") setEditingLinkIdx(null); }}
+                  placeholder="https://…"
+                  className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm"
+                />
+                <button type="button" onClick={() => setEditingLinkIdx(null)} className="text-xs text-zinc-400 hover:text-zinc-100">done</button>
+                <button type="button" onClick={() => removeLink(i)} className="text-zinc-600 hover:text-red-400 text-sm" title="remove">✕</button>
+              </div>
+            ) : (
+              <div key={i} className="flex items-center gap-2 group/link">
+                <a
+                  href={lnk.url || undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center gap-1.5 flex-1 min-w-0 text-sm text-blue-400 hover:underline"
+                >
+                  {lnk.url && (
+                    <img
+                      src={faviconUrl(lnk.url)}
+                      alt=""
+                      className="w-4 h-4 rounded shrink-0"
+                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+                    />
+                  )}
+                  <span className="truncate">{linkLabel(lnk)}</span>
+                  <span className="text-zinc-500">↗</span>
+                </a>
+                <button type="button" onClick={() => setEditingLinkIdx(i)} className="text-xs text-zinc-500 hover:text-zinc-300 opacity-0 group-hover/link:opacity-100">edit</button>
+                <button type="button" onClick={() => removeLink(i)} className="text-zinc-600 hover:text-red-400 text-sm opacity-0 group-hover/link:opacity-100" title="remove">✕</button>
+              </div>
+            )
           ))}
         </div>
         <button type="button" onClick={addLink} className="mt-1.5 text-xs text-zinc-400 hover:text-zinc-100">+ add link</button>
@@ -459,7 +542,7 @@ export default function ItemDetail() {
 
   const topBar = (
     <div className="flex items-center gap-2 shrink-0">
-      <Link to="/" className="text-xs text-zinc-400 hover:text-zinc-100">back</Link>
+      <button onClick={() => nav(-1)} className="text-xs text-zinc-400 hover:text-zinc-100">back</button>
       <span className={`ml-2 text-xs transition-opacity duration-500 ${saveStatus === "idle" ? "opacity-0" : "opacity-100"} ${saveStatus === "saved" ? "text-zinc-400" : "text-zinc-500"}`}>
         {saveStatus === "saving" ? "Saving..." : "Saved"}
       </span>

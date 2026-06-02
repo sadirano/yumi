@@ -145,6 +145,13 @@ export const api = {
   // Records one explicit open-the-resource click (usage metrics). Fire-and-forget.
   pingAccess: (id: number) => req<void>("POST", `/items/${id}/access`),
 
+  uploadItemFile: (itemId: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return fetch(`${BASE}/items/${itemId}/uploads`, { method: "POST", body })
+      .then(r => r.ok ? r.json() as Promise<{ url: string }> : Promise.reject(r));
+  },
+
   listTags: (prefix?: string) =>
     req<Tag[]>("GET", `/tags${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""}`),
   deleteTag: (name: string) => req<void>("DELETE", `/tags/${encodeURIComponent(name)}`),
