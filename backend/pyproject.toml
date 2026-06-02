@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "httpx>=0.27",
+    "python-multipart>=0.0.9",
     "selectolax>=0.3.25",
     "yt-dlp>=2025.1.15",
 ]

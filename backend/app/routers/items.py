@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import shutil
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
 from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 
@@ -12,6 +14,10 @@ from ..db import get_session
 from ..enrich import enrich_url, normalize_url
 from ..models import Item, ItemRevision, Space, Tag, utcnow_iso
 from ..schemas import ItemCreate, ItemOut, ItemPatch, RevisionOut
+from ..settings import settings
+
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
 
 _MAX_REVISIONS = 50
 
@@ -317,6 +323,27 @@ def restore(item_id: int, db: Session = Depends(get_session)):
     return item
 
 
+@router.post("/{item_id}/uploads")
+async def upload_image(item_id: int, file: UploadFile, db: Session = Depends(get_session)):
+    item = db.get(Item, item_id)
+    if not item or item.deleted_at:
+        raise HTTPException(404, "not found")
+    if file.content_type not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(400, f"unsupported image type: {file.content_type}")
+    data = await file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(data) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "image exceeds 10 MB limit")
+    ext = file.content_type.split("/")[1].replace("jpeg", "jpg")
+    item_dir = settings.uploads_dir / str(item_id)
+    item_dir.mkdir(parents=True, exist_ok=True)
+    sha = hashlib.sha256(data).hexdigest()
+    filename = f"{sha}.{ext}"
+    dest = item_dir / filename
+    if not dest.exists():
+        dest.write_bytes(data)
+    return {"url": f"/uploads/{item_id}/{filename}"}
+
+
 @router.delete("/{item_id}/purge", status_code=204)
 def purge(item_id: int, db: Session = Depends(get_session)):
     item = db.get(Item, item_id)
@@ -324,6 +351,9 @@ def purge(item_id: int, db: Session = Depends(get_session)):
         raise HTTPException(404, "not in trash")
     db.delete(item)
     db.commit()
+    item_dir = settings.uploads_dir / str(item_id)
+    if item_dir.exists():
+        shutil.rmtree(item_dir)
 
 
 @router.post("/{item_id}/refresh", response_model=ItemOut)

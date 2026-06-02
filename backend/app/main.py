@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .backup import run_startup_backup
-from .crud import sweep_orphan_tags
+from .crud import sweep_orphan_tags, sweep_orphan_uploads
 from .db import SessionLocal, init_db
 from .routers import items, saved_filters, spaces, tags, trash
 from .settings import settings
@@ -41,6 +41,10 @@ async def lifespan(app: FastAPI):
         removed = sweep_orphan_tags(db)
     if removed:
         print(f"[startup] swept {removed} unused tag(s)")
+    with SessionLocal() as db:
+        moved, purged = sweep_orphan_uploads(db)
+    if moved or purged:
+        print(f"[startup] uploads: {moved} orphan(s) moved to trash, {purged} purged after 30 days")
     yield
 
 
@@ -64,6 +68,10 @@ app.include_router(trash.router)
 def health():
     return {"ok": True, "db": str(settings.db_path)}
 
+
+# Mount user uploads — must come before the SPA catch-all
+settings.uploads_dir.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=settings.uploads_dir), name="uploads")
 
 # Mount built frontend if present
 if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():

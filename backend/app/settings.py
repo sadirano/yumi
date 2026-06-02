@@ -49,5 +49,11 @@ class Settings(BaseSettings):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         return f"sqlite:///{self.db_path.as_posix()}"
 
+    @property
+    def uploads_dir(self) -> Path:
+        path = self.data_dir / "uploads"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
 
 settings = Settings()
