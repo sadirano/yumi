@@ -35,6 +35,7 @@ export default function ItemDetail() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [layout, setLayout] = useState<Layout>("split");
   const ready = useRef(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const [thumbEdit, setThumbEdit] = useState(false);
   const [thumbInput, setThumbInput] = useState("");
@@ -128,6 +129,15 @@ export default function ItemDetail() {
       .catch(() => {});
   }
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e: PointerEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [menuOpen]);
+
   async function openHistory() {
     setMenuOpen(false);
     const revs = await api.listRevisions(itemId);
@@ -185,6 +195,9 @@ export default function ItemDetail() {
             placeholder="Paste image URL…"
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm outline-none focus:border-zinc-500"
           />
+          <a href="https://www.base64-image.de/" target="_blank" rel="noreferrer" className="text-xs text-zinc-400 hover:text-zinc-200 underline text-center">
+            Don't have a URL? Convert your image here
+          </a>
           <div className="flex gap-2">
             <button
               onClick={() => patchThumb.mutate(thumbInput.trim())}
@@ -221,7 +234,7 @@ export default function ItemDetail() {
           )}
           <button
             onClick={() => { setThumbInput(item.thumbnail_url || ""); setThumbEdit(true); }}
-            className="absolute bottom-2 right-2 px-2 py-1 text-xs bg-black/70 hover:bg-black/90 rounded opacity-0 group-hover/thumb:opacity-100 transition-opacity"
+            className="absolute bottom-2 right-2 px-2 py-1 text-xs bg-black/70 hover:bg-black/90 rounded md:opacity-0 md:group-hover/thumb:opacity-100 transition-opacity"
           >
             Change image
           </button>
@@ -243,7 +256,8 @@ export default function ItemDetail() {
     </div>
   );
 
-  const notesPanel = (
+  // Used in fixed-height desktop layouts where the notes fill remaining space.
+  const notesPanelFill = (
     <div className="flex-1 min-h-0 flex flex-col">
       <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
         <span>Notes (markdown)</span>
@@ -258,6 +272,28 @@ export default function ItemDetail() {
           value={notes}
           onChange={e => setNotes(e.target.value)}
           className="flex-1 resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm"
+          placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
+        />
+      )}
+    </div>
+  );
+
+  // Used in scrollable layouts (mobile + desktop split right column).
+  const notesPanel = (
+    <div className="flex flex-col">
+      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+        <span>Notes (markdown)</span>
+        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">{preview ? "edit" : "preview"}</button>
+      </div>
+      {preview ? (
+        <div className="prose prose-invert prose-sm max-w-none bg-zinc-900 rounded p-3 border border-zinc-800 min-h-[8rem]">
+          <ReactMarkdown>{notes || "_no notes_"}</ReactMarkdown>
+        </div>
+      ) : (
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          className="w-full resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm min-h-[12rem]"
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
       )}
@@ -297,7 +333,7 @@ export default function ItemDetail() {
                   <li
                     key={r.id}
                     className="px-2 py-1.5 text-sm hover:bg-zinc-800 cursor-pointer"
-                    onMouseDown={() => {
+                    onPointerDown={() => {
                       setTags(prev => [...new Set([...prev, ...r.tags.map(t => t.name)])]);
                       setCopyOpen(false);
                       setCopyQuery("");
@@ -314,13 +350,15 @@ export default function ItemDetail() {
         )}
         <TagInput value={tags} onChange={setTags} />
       </div>
-      <div>
-        <label className="text-xs text-zinc-400 mb-1 block">status</label>
-        <select value={status} onChange={e => setStatus(e.target.value as ItemStatus)}
-          className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm">
-          {STATUSES.map(s => <option key={s} value={s}>{DEFAULT_LABELS[s]}</option>)}
-        </select>
-      </div>
+      {item.kind !== "note" && (
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">status</label>
+          <select value={status} onChange={e => setStatus(e.target.value as ItemStatus)}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm">
+            {STATUSES.map(s => <option key={s} value={s}>{DEFAULT_LABELS[s]}</option>)}
+          </select>
+        </div>
+      )}
       {isSerialized(tags) && (
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -428,15 +466,14 @@ export default function ItemDetail() {
       <div className="ml-auto flex items-center gap-2">
         <button
           onClick={() => setLayout(l => l === "split" ? "notes" : "split")}
-          className="text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded hover:bg-zinc-800"
+          className="hidden md:block text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded hover:bg-zinc-800"
           title={layout === "split" ? "Focus on notes" : "Show thumbnail"}
         >
           {layout === "split" ? "notes view" : "split view"}
         </button>
-        <div className="relative">
+        <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen(o => !o)}
-            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
             className="px-2 py-1 text-zinc-400 hover:text-zinc-100 rounded hover:bg-zinc-800 text-base leading-none"
           >
             ...
@@ -474,7 +511,7 @@ export default function ItemDetail() {
 
   const historyPanel = historyOpen && (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setHistoryOpen(false)}>
-      <div className="w-80 bg-zinc-900 border-l border-zinc-800 h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="w-full md:w-80 bg-zinc-900 border-l border-zinc-800 h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
           <span className="text-sm font-medium">History</span>
           <button onClick={() => setHistoryOpen(false)} className="text-zinc-500 hover:text-zinc-200">x</button>
@@ -511,10 +548,24 @@ export default function ItemDetail() {
     </div>
   );
 
-  if (layout === "notes") {
-    return (
-      <>
-        <div className="flex flex-col gap-3 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
+  return (
+    <>
+      {/* ── Mobile: single scrollable column ─────────────────────── */}
+      <div className="md:hidden flex flex-col">
+        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800 px-4 py-2 shrink-0">
+          {topBar}
+        </div>
+        <div className="aspect-video shrink-0">{media}</div>
+        <div className="px-4 py-2 border-b border-zinc-800">{meta}</div>
+        <div className="flex flex-col gap-4 p-4 pb-10">
+          {fields}
+          {notesPanel}
+        </div>
+      </div>
+
+      {/* ── Desktop: notes-focused layout ────────────────────────── */}
+      {layout === "notes" && (
+        <div className="hidden md:flex flex-col gap-3 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
           {topBar}
           <div className="flex gap-6 flex-1 min-h-0 overflow-hidden">
             <div className="flex flex-col gap-3 w-64 shrink-0 overflow-y-auto">
@@ -522,29 +573,26 @@ export default function ItemDetail() {
               {meta}
               {fields}
             </div>
-            <div className="flex-1 min-h-0 flex flex-col">
-              {notesPanel}
-            </div>
+            <div className="flex-1 min-h-0 flex flex-col">{notesPanelFill}</div>
           </div>
         </div>
-        {historyPanel}
-      </>
-    );
-  }
+      )}
 
-  return (
-    <>
-      <div className="grid grid-cols-1 lg:grid-cols-[2fr_3fr] gap-6 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
-        <div className="flex flex-col gap-3 min-h-0">
-          <div className="flex-1 min-h-0">{media}</div>
-          {meta}
+      {/* ── Desktop: split layout ─────────────────────────────────── */}
+      {layout === "split" && (
+        <div className="hidden md:grid md:grid-cols-[2fr_3fr] gap-6 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
+          <div className="flex flex-col gap-3 min-h-0">
+            <div className="flex-1 min-h-0">{media}</div>
+            {meta}
+          </div>
+          <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pb-4">
+            {topBar}
+            {fields}
+            {notesPanel}
+          </div>
         </div>
-        <div className="flex flex-col gap-3 min-h-0 overflow-hidden">
-          {topBar}
-          {fields}
-          {notesPanel}
-        </div>
-      </div>
+      )}
+
       {historyPanel}
     </>
   );
