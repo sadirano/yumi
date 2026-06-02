@@ -46,6 +46,10 @@ export default function ItemDetail() {
   const [layout, setLayout] = useState<Layout>("split");
   const ready = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const notesFileRef = useRef<HTMLInputElement>(null);
+  const thumbFileRef = useRef<HTMLInputElement>(null);
+  const attachFileRef = useRef<HTMLInputElement>(null);
+  const notesCursor = useRef(0);
 
   const [thumbEdit, setThumbEdit] = useState(false);
   const [thumbInput, setThumbInput] = useState("");
@@ -179,6 +183,28 @@ export default function ItemDetail() {
     },
   });
 
+  const { data: attachments = [], refetch: refetchAttachments } = useQuery({
+    queryKey: ["attachments", itemId],
+    queryFn: () => api.listAttachments(itemId),
+    enabled: !!itemId,
+  });
+
+  const uploadAttachment = useMutation({
+    mutationFn: (file: File) => api.uploadAttachment(itemId, file),
+    onSuccess: () => refetchAttachments(),
+  });
+
+  const deleteAttachment = useMutation({
+    mutationFn: (name: string) => api.deleteAttachment(itemId, name),
+    onSuccess: () => refetchAttachments(),
+  });
+
+  function fmtSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   const [editingLinkIdx, setEditingLinkIdx] = useState<number | null>(null);
 
   function updateLink(i: number, field: "label" | "url", val: string) {
@@ -229,6 +255,23 @@ export default function ItemDetail() {
     setNotes(prev => `${prev.slice(0, start)}![](${url})${prev.slice(end)}`);
   }
 
+  async function handleNotesFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const pos = notesCursor.current;
+    const url = await uploadImage(file);
+    setNotes(prev => `${prev.slice(0, pos)}![](${url})${prev.slice(pos)}`);
+  }
+
+  async function handleThumbFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const url = await uploadImage(file);
+    setThumbInput(url);
+  }
+
   if (isLoading || !item) return <div className="p-6 text-zinc-500">Loading...</div>;
 
   const media = (
@@ -250,9 +293,16 @@ export default function ItemDetail() {
             placeholder="Paste image or URL…"
             className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm outline-none focus:border-zinc-500"
           />
-          <a href="https://www.base64-image.de/" target="_blank" rel="noreferrer" className="text-xs text-zinc-400 hover:text-zinc-200 underline text-center">
-            Don't have a URL? Convert your image here
-          </a>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => thumbFileRef.current?.click()}
+              className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+            >
+              Choose file…
+            </button>
+            <input ref={thumbFileRef} type="file" accept="image/*" className="hidden" onChange={handleThumbFileSelect} />
+          </div>
           <div className="flex gap-2">
             <button
               onClick={() => patchThumb.mutate(thumbInput.trim())}
@@ -311,13 +361,32 @@ export default function ItemDetail() {
     </div>
   );
 
+  const notesHeader = (
+    <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
+      <span>Notes (markdown)</span>
+      <div className="flex items-center gap-2">
+        {!preview && (
+          <>
+            <button
+              type="button"
+              onClick={() => notesFileRef.current?.click()}
+              className="hover:text-zinc-100"
+              title="Insert image"
+            >
+              image
+            </button>
+            <input ref={notesFileRef} type="file" accept="image/*" className="hidden" onChange={handleNotesFileSelect} />
+          </>
+        )}
+        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">{preview ? "edit" : "preview"}</button>
+      </div>
+    </div>
+  );
+
   // Used in fixed-height desktop layouts where the notes fill remaining space.
   const notesPanelFill = (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-        <span>Notes (markdown)</span>
-        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">{preview ? "edit" : "preview"}</button>
-      </div>
+      {notesHeader}
       {preview ? (
         <div className="prose prose-invert prose-sm max-w-none flex-1 overflow-auto bg-zinc-900 rounded p-3 border border-zinc-800">
           <ReactMarkdown>{notes || "_no notes_"}</ReactMarkdown>
@@ -328,6 +397,8 @@ export default function ItemDetail() {
           value={notes}
           onChange={e => setNotes(e.target.value)}
           onPaste={handleNotesPaste}
+          onSelect={e => { notesCursor.current = e.currentTarget.selectionStart; }}
+          onKeyUp={e => { notesCursor.current = e.currentTarget.selectionStart; }}
           className="flex-1 resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm"
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
@@ -338,10 +409,7 @@ export default function ItemDetail() {
   // Used in scrollable layouts (mobile + desktop split right column).
   const notesPanel = (
     <div className="flex flex-col">
-      <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-        <span>Notes (markdown)</span>
-        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">{preview ? "edit" : "preview"}</button>
-      </div>
+      {notesHeader}
       {preview ? (
         <div className="prose prose-invert prose-sm max-w-none bg-zinc-900 rounded p-3 border border-zinc-800 min-h-[8rem]">
           <ReactMarkdown>{notes || "_no notes_"}</ReactMarkdown>
@@ -352,6 +420,8 @@ export default function ItemDetail() {
           value={notes}
           onChange={e => setNotes(e.target.value)}
           onPaste={handleNotesPaste}
+          onSelect={e => { notesCursor.current = e.currentTarget.selectionStart; }}
+          onKeyUp={e => { notesCursor.current = e.currentTarget.selectionStart; }}
           className="w-full resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm min-h-[12rem]"
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
@@ -531,6 +601,51 @@ export default function ItemDetail() {
           ))}
         </div>
         <button type="button" onClick={addLink} className="mt-1.5 text-xs text-zinc-400 hover:text-zinc-100">+ add link</button>
+      </div>
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-xs text-zinc-400">files</label>
+          <button
+            type="button"
+            onClick={() => attachFileRef.current?.click()}
+            disabled={uploadAttachment.isPending}
+            className="text-xs text-zinc-500 hover:text-zinc-300 disabled:opacity-50"
+          >
+            {uploadAttachment.isPending ? "uploading…" : "+ attach"}
+          </button>
+          <input
+            ref={attachFileRef}
+            type="file"
+            className="hidden"
+            onChange={e => {
+              const file = e.target.files?.[0];
+              if (file) { uploadAttachment.mutate(file); e.target.value = ""; }
+            }}
+          />
+        </div>
+        {attachments.length > 0 && (
+          <div className="space-y-1">
+            {attachments.map(att => (
+              <div key={att.name} className="flex items-center gap-2 group/att">
+                <a
+                  href={att.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex-1 min-w-0 flex items-center gap-1.5 text-sm text-blue-400 hover:underline"
+                >
+                  <span className="truncate">{att.name}</span>
+                  <span className="text-zinc-600 text-xs shrink-0">{fmtSize(att.size)}</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => deleteAttachment.mutate(att.name)}
+                  className="text-zinc-600 hover:text-red-400 text-sm opacity-0 group-hover/att:opacity-100 shrink-0"
+                  title="remove"
+                >✕</button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
       {item.needs_enrichment && (
         <div className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 rounded p-2">

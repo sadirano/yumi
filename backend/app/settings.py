@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 8765
     enrichment_timeout_sec: float = 15.0
+    max_upload_mb: int = 500
 
     @property
     def db_path(self) -> Path:

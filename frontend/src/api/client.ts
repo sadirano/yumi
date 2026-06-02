@@ -152,6 +152,17 @@ export const api = {
       .then(r => r.ok ? r.json() as Promise<{ url: string }> : Promise.reject(r));
   },
 
+  listAttachments: (itemId: number) =>
+    req<{ name: string; size: number; url: string }[]>("GET", `/items/${itemId}/attachments`),
+  uploadAttachment: (itemId: number, file: File) => {
+    const body = new FormData();
+    body.append("file", file);
+    return fetch(`${BASE}/items/${itemId}/attachments`, { method: "POST", body })
+      .then(r => r.ok ? r.json() as Promise<{ name: string; size: number; url: string }> : Promise.reject(r));
+  },
+  deleteAttachment: (itemId: number, name: string) =>
+    req<void>("DELETE", `/items/${itemId}/attachments/${encodeURIComponent(name)}`),
+
   listTags: (prefix?: string) =>
     req<Tag[]>("GET", `/tags${prefix ? `?prefix=${encodeURIComponent(prefix)}` : ""}`),
   deleteTag: (name: string) => req<void>("DELETE", `/tags/${encodeURIComponent(name)}`),

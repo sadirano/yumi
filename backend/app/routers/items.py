@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import shutil
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import delete as sa_delete, func, select, text
 from sqlalchemy.orm import Session
 
@@ -17,7 +20,13 @@ from ..schemas import ItemCreate, ItemOut, ItemPatch, RevisionOut
 from ..settings import settings
 
 _ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
-_MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10 MB hard cap for inline images
+
+
+def _safe_filename(name: str) -> str:
+    name = os.path.basename(name)  # strip any directory component
+    name = re.sub(r"[^\w\-. ]", "_", name).strip(". ") or "file"
+    return name
 
 _MAX_REVISIONS = 50
 
@@ -330,18 +339,98 @@ async def upload_image(item_id: int, file: UploadFile, db: Session = Depends(get
         raise HTTPException(404, "not found")
     if file.content_type not in _ALLOWED_IMAGE_TYPES:
         raise HTTPException(400, f"unsupported image type: {file.content_type}")
-    data = await file.read(_MAX_UPLOAD_BYTES + 1)
-    if len(data) > _MAX_UPLOAD_BYTES:
-        raise HTTPException(413, "image exceeds 10 MB limit")
-    ext = file.content_type.split("/")[1].replace("jpeg", "jpg")
+    ext = (file.content_type or "").split("/")[1].replace("jpeg", "jpg")
     item_dir = settings.uploads_dir / str(item_id)
     item_dir.mkdir(parents=True, exist_ok=True)
-    sha = hashlib.sha256(data).hexdigest()
-    filename = f"{sha}.{ext}"
-    dest = item_dir / filename
-    if not dest.exists():
-        dest.write_bytes(data)
+    tmp = item_dir / f".tmp_{os.getpid()}"
+    h = hashlib.sha256()
+    written = 0
+    try:
+        with tmp.open("wb") as f:
+            while chunk := await file.read(65536):
+                written += len(chunk)
+                if written > _MAX_IMAGE_BYTES:
+                    raise HTTPException(413, "image exceeds 10 MB limit")
+                h.update(chunk)
+                f.write(chunk)
+        filename = f"{h.hexdigest()}.{ext}"
+        dest = item_dir / filename
+        if dest.exists():
+            tmp.unlink()
+        else:
+            tmp.rename(dest)
+    except HTTPException:
+        tmp.unlink(missing_ok=True)
+        raise
     return {"url": f"/uploads/{item_id}/{filename}"}
+
+
+@router.post("/{item_id}/attachments")
+async def upload_attachment(item_id: int, file: UploadFile, db: Session = Depends(get_session)):
+    item = db.get(Item, item_id)
+    if not item or item.deleted_at:
+        raise HTTPException(404, "not found")
+    max_bytes = settings.max_upload_mb * 1024 * 1024
+    att_dir = settings.uploads_dir / str(item_id) / "attachments"
+    att_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = _safe_filename(file.filename or "file")
+    dest = att_dir / safe_name
+    written = 0
+    try:
+        with dest.open("wb") as f:
+            while chunk := await file.read(65536):
+                written += len(chunk)
+                if written > max_bytes:
+                    raise HTTPException(413, f"file exceeds {settings.max_upload_mb} MB limit")
+                f.write(chunk)
+    except HTTPException:
+        dest.unlink(missing_ok=True)
+        raise
+    return {"name": safe_name, "size": written, "url": f"/api/items/{item_id}/attachments/{safe_name}"}
+
+
+@router.get("/{item_id}/attachments")
+def list_attachments(item_id: int, db: Session = Depends(get_session)):
+    item = db.get(Item, item_id)
+    if not item or item.deleted_at:
+        raise HTTPException(404, "not found")
+    att_dir = settings.uploads_dir / str(item_id) / "attachments"
+    if not att_dir.exists():
+        return []
+    return [
+        {"name": f.name, "size": f.stat().st_size, "url": f"/api/items/{item_id}/attachments/{f.name}"}
+        for f in sorted(att_dir.iterdir())
+        if f.is_file()
+    ]
+
+
+@router.get("/{item_id}/attachments/{filename}")
+def download_attachment(item_id: int, filename: str, db: Session = Depends(get_session)):
+    item = db.get(Item, item_id)
+    if not item or item.deleted_at:
+        raise HTTPException(404, "not found")
+    safe = _safe_filename(filename)
+    if safe != filename:
+        raise HTTPException(400, "invalid filename")
+    path = settings.uploads_dir / str(item_id) / "attachments" / safe
+    if not path.is_file():
+        raise HTTPException(404, "attachment not found")
+    disposition = "inline" if path.suffix.lower() == ".pdf" else "attachment"
+    return FileResponse(path, filename=safe, content_disposition_type=disposition)
+
+
+@router.delete("/{item_id}/attachments/{filename}", status_code=204)
+def delete_attachment(item_id: int, filename: str, db: Session = Depends(get_session)):
+    item = db.get(Item, item_id)
+    if not item or item.deleted_at:
+        raise HTTPException(404, "not found")
+    safe = _safe_filename(filename)
+    if safe != filename:
+        raise HTTPException(400, "invalid filename")
+    path = settings.uploads_dir / str(item_id) / "attachments" / safe
+    if not path.is_file():
+        raise HTTPException(404, "attachment not found")
+    path.unlink()
 
 
 @router.delete("/{item_id}/purge", status_code=204)
