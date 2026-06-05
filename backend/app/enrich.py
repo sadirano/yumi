@@ -208,6 +208,57 @@ async def enrich_youtube(url: str) -> Enrichment:
 
 
 async def enrich_generic_url(url: str) -> Enrichment:
+    m = re.search(r"anilist\.co/(anime|manga)/(\d+)", url)
+    if m:
+        media_type = m.group(1).upper()
+        media_id = m.group(2)
+        query = """
+        query ($id: Int, $type: MediaType) {
+          Media(id: $id, type: $type) {
+            title { romaji english }
+            description(asHtml: false)
+            genres
+            tags { name }
+            coverImage { large }
+          }
+        }
+        """
+        try:
+            async with httpx.AsyncClient(timeout=settings.enrichment_timeout_sec) as client:
+                r = await client.post(
+                    "https://graphql.anilist.co",
+                    json={"query": query, "variables": {"id": int(media_id), "type": media_type}}
+                )
+                if r.status_code == 200:
+                    data = r.json().get("data", {}).get("Media")
+                    if data:
+                        title = data["title"].get("english") or data["title"].get("romaji") or ""
+                        desc = data.get("description") or ""
+                        
+                        extra = []
+                        if data.get("genres"):
+                            extra.append("Genres: " + ", ".join(data["genres"]))
+                        if data.get("tags"):
+                            extra.append("Tags: " + ", ".join(t["name"] for t in data["tags"]))
+                            
+                        if extra:
+                            desc = desc + "\n\n" + "\n".join(extra)
+                            
+                        thumb = None
+                        if data.get("coverImage"):
+                            thumb = data["coverImage"].get("large")
+                            
+                        return Enrichment(
+                            kind="url",
+                            title=title,
+                            description=desc[:2000],
+                            channel="AniList",
+                            thumbnail_url=thumb,
+                            canonical_url=url,
+                        )
+        except Exception:
+            pass
+
     try:
         # Follow redirects manually so every hop is re-validated against the
         # SSRF guard (a public URL can otherwise redirect into the internal net).
