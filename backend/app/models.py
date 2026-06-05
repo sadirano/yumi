@@ -33,10 +33,6 @@ class Item(Base):
     # derived (total is not None and progress >= total), never stored.
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # AniList media id (anime vs manga is derived from the item's tags); the URL
-    # is built client-side. related_links_json is a JSON array of {label, url}.
-    anilist_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    related_links_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     needs_enrichment: Mapped[bool] = mapped_column(default=False)
     # Usage metrics: bumped only by an explicit open-the-resource click (see the
     # /access endpoint), never by passive reads. last_accessed_at is ISO or NULL.
@@ -49,11 +45,6 @@ class Item(Base):
     tags: Mapped[list["Tag"]] = relationship(
         "Tag", secondary="item_tags", back_populates="items", lazy="selectin"
     )
-
-    @property
-    def related_links(self) -> list[dict]:
-        return json.loads(self.related_links_json or "[]")
-
 
 class Tag(Base):
     __tablename__ = "tags"
@@ -97,6 +88,8 @@ class Space(Base):
     # JSON map of canonical status -> custom display label for this Space's 3
     # active states (plan/in-progress/completed). NULL = use canonical defaults.
     labels_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    note_template_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    templates_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
 
 

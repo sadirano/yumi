@@ -16,11 +16,6 @@ class TagOut(BaseModel):
     count: int = 0
 
 
-class RelatedLink(BaseModel):
-    label: str = ""
-    url: str
-
-
 class ItemBase(BaseModel):
     title: str = ""
     description: str = ""
@@ -32,8 +27,6 @@ class ItemBase(BaseModel):
     status: ItemStatus = "plan"
     progress: int = 0
     total: Optional[int] = None
-    anilist_id: Optional[int] = None
-    related_links: list[RelatedLink] = Field(default_factory=list)
 
 
 class ItemOut(ItemBase):
@@ -70,8 +63,6 @@ class ItemPatch(BaseModel):
     thumbnail_url: Optional[str] = None
     progress: Optional[int] = None
     total: Optional[int] = None
-    anilist_id: Optional[int] = None
-    related_links: Optional[list[RelatedLink]] = None
 
 
 class RevisionOut(BaseModel):
@@ -85,6 +76,12 @@ class RevisionOut(BaseModel):
     created_at: str
 
 
+class TemplateOut(BaseModel):
+    id: str
+    name: str
+    content: str
+
+
 class SpaceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -94,6 +91,8 @@ class SpaceOut(BaseModel):
     # Per-Space display labels overriding the 3 active statuses (plan,
     # in-progress, completed). `archived` stays fixed; null = canonical defaults.
     labels: Optional[dict[str, str]] = None
+    note_template_md: str = ""
+    templates: list[TemplateOut] = Field(default_factory=list)
     created_at: str
 
 
@@ -102,6 +101,8 @@ class SpaceCreate(BaseModel):
     namespaces: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     labels: Optional[dict[str, str]] = None
+    note_template_md: str = ""
+    templates: list[TemplateOut] = Field(default_factory=list)
 
 
 class SpacePatch(BaseModel):
@@ -109,6 +110,8 @@ class SpacePatch(BaseModel):
     namespaces: Optional[list[str]] = None
     tags: Optional[list[str]] = None
     labels: Optional[dict[str, str]] = None
+    note_template_md: Optional[str] = None
+    templates: Optional[list[TemplateOut]] = None
 
 
 class DuplicateError(BaseModel):

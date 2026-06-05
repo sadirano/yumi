@@ -1,16 +1,16 @@
 import { useState, useEffect, useRef } from "react";
-import { Link, NavLink, Route, Routes, useSearchParams } from "react-router-dom";
+import { Link, NavLink, Route, Routes, useSearchParams, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import Library from "./pages/Library";
 import ItemDetail from "./pages/ItemDetail";
 import Trash from "./pages/Trash";
 import AddItemDialog from "./components/AddItemDialog";
 import SpaceDialog from "./components/SpaceDialog";
-import { api, Space } from "./api/client";
+import { api, Space, Template } from "./api/client";
 import { getSerializedTags, setSerializedTags } from "./lib/serialized";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
-  `px-3 py-1.5 rounded text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`;
+  `block px-3 py-2 rounded text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"}`;
 
 // Edits the tags that mark content as serialized (gets an episode/chapter
 // counter). Persists locally; reloads so every card/detail re-reads the rule.
@@ -45,57 +45,7 @@ function CounterTagsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-// Right-aligned "⋯" menu for secondary, rarely-used destinations (Trash, settings)
-// so they don't clutter the main nav. Click-outside closes, like SpaceMenu below.
-function OverflowMenu() {
-  const [open, setOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("pointerdown", onDoc);
-    return () => document.removeEventListener("pointerdown", onDoc);
-  }, [open]);
-
-  return (
-    <>
-      <div ref={ref} className="relative">
-        <button
-          onClick={() => setOpen(o => !o)}
-          className={`px-2 py-1.5 rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`}
-          title="More"
-          aria-label="More"
-        >
-          ⋯
-        </button>
-        {open && (
-          <div className="absolute top-full right-0 mt-1 z-40 min-w-[10rem] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col">
-            <NavLink
-              to="/trash"
-              onClick={() => setOpen(false)}
-              className={({ isActive }) =>
-                `px-3 py-1.5 text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
-              }
-            >
-              Trash
-            </NavLink>
-            <button
-              onClick={() => { setOpen(false); setSettingsOpen(true); }}
-              className="px-3 py-1.5 text-sm text-left text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
-            >
-              Counter tags…
-            </button>
-          </div>
-        )}
-      </div>
-      {settingsOpen && <CounterTagsDialog onClose={() => setSettingsOpen(false)} />}
-    </>
-  );
-}
+// OverflowMenu removed since desktop sidebar has room for all items
 
 // A space whose name contains a colon (e.g. "Work: Alpha") is collapsed into a
 // dropdown menu named by the part before the first colon ("Work"); the part
@@ -144,16 +94,16 @@ function SpaceLink({
 }) {
   const active = activeSpaceId === space.id;
   return (
-    <span className={`group/space relative inline-flex items-center ${className ?? ""}`}>
+    <span className={`group/space relative flex items-center ${className ?? ""}`}>
       <Link
         to={`/?space=${space.id}`}
-        className={`px-3 py-1.5 rounded-l text-sm pr-1.5 ${active ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100"}`}
+        className={`flex-1 px-3 py-2 rounded-l text-sm pr-1.5 ${active ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"}`}
       >
         {label}
       </Link>
       <button
         onClick={() => onEdit(space)}
-        className={`px-1 py-1.5 rounded-r text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/space:opacity-100 transition-opacity text-xs ${active ? "bg-zinc-800" : "hover:bg-zinc-800"}`}
+        className={`px-3 py-2 rounded-r text-zinc-600 hover:text-zinc-300 opacity-0 group-hover/space:opacity-100 transition-opacity text-xs ${active ? "bg-zinc-800" : "hover:bg-zinc-800"}`}
         title="Edit space"
       >
         ⚙
@@ -184,19 +134,19 @@ function SpaceMenu({
   }, [open]);
 
   return (
-    <div ref={ref} className="relative inline-flex items-center">
+    <div ref={ref} className="relative flex flex-col">
       <button
         onClick={() => setOpen(o => !o)}
-        className={`px-3 py-1.5 rounded text-sm inline-flex items-center gap-1 ${
-          activeChild ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+        className={`flex px-3 py-2 rounded text-sm items-center justify-between ${
+          activeChild ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"
         }`}
         title={`${prefix} spaces`}
       >
-        {activeChild ? `${prefix}: ${menuLabel(activeChild.name)}` : prefix}
-        <span className="text-[10px] text-zinc-500">▾</span>
+        <span>{activeChild ? `${prefix}: ${menuLabel(activeChild.name)}` : prefix}</span>
+        <span className="text-[10px] text-zinc-500">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-40 min-w-[12rem] bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col">
+        <div className="flex flex-col ml-2 border-l border-zinc-800 pl-1 mt-1">
           {spaces.map(space => (
             <SpaceLink
               key={space.id}
@@ -204,7 +154,6 @@ function SpaceMenu({
               label={menuLabel(space.name)}
               activeSpaceId={activeSpaceId}
               onEdit={s => { setOpen(false); onEdit(s); }}
-              className="px-1"
             />
           ))}
         </div>
@@ -220,8 +169,8 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
   const [editing, setEditing] = useState<Space | null>(null);
 
   const update = useMutation({
-    mutationFn: ({ id, name, namespaces, tags, labels }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null }) =>
-      api.updateSpace(id, { name, namespaces, tags, labels }),
+    mutationFn: ({ id, name, namespaces, tags, labels, templates }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null, templates: Template[] }) =>
+      api.updateSpace(id, { name, namespaces, tags, labels, templates }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
   });
 
@@ -256,7 +205,7 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
       {editing && (
         <SpaceDialog
           space={editing}
-          onSave={(name, namespaces, tags, labels) => update.mutate({ id: editing.id, name, namespaces, tags, labels })}
+          onSave={(name, namespaces, tags, labels, templates) => update.mutate({ id: editing.id, name, namespaces, tags, labels, templates })}
           onDelete={() => del.mutate(editing.id)}
           onClose={() => setEditing(null)}
         />
@@ -281,8 +230,8 @@ function MobileNav({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const update = useMutation({
-    mutationFn: ({ id, name, namespaces, tags, labels }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null }) =>
-      api.updateSpace(id, { name, namespaces, tags, labels }),
+    mutationFn: ({ id, name, namespaces, tags, labels, templates }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null, templates: Template[] }) =>
+      api.updateSpace(id, { name, namespaces, tags, labels, templates }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
   });
 
@@ -351,7 +300,7 @@ function MobileNav({
       {editing && (
         <SpaceDialog
           space={editing}
-          onSave={(name, namespaces, tags, labels) => update.mutate({ id: editing.id, name, namespaces, tags, labels })}
+          onSave={(name, namespaces, tags, labels, templates) => update.mutate({ id: editing.id, name, namespaces, tags, labels, templates })}
           onDelete={() => del.mutate(editing.id)}
           onClose={() => setEditing(null)}
         />
@@ -360,6 +309,77 @@ function MobileNav({
     </>
   );
 }
+
+function SettingsMenu({ canInstall, install, onOpenTags, collapsed = false, autoCollapse, onToggleAutoCollapse }: { canInstall: boolean, install: () => void, onOpenTags: () => void, collapsed?: boolean, autoCollapse: boolean, onToggleAutoCollapse: () => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDoc(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onDoc);
+    return () => document.removeEventListener("pointerdown", onDoc);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative mt-auto pt-4 border-t border-zinc-800 flex flex-col">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`w-full flex items-center ${collapsed ? "justify-center p-1.5 w-8 h-8 mx-auto" : "gap-2 px-3 py-2"} rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"}`}
+        title="Settings"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+        </svg>
+        {!collapsed && "Settings"}
+      </button>
+
+      {open && (
+        <div className={`absolute bottom-full left-0 mb-1 z-40 bg-zinc-900 border border-zinc-700 rounded-lg shadow-2xl py-1 flex flex-col ${collapsed ? "min-w-[12rem]" : "w-[calc(100%+2rem)] -ml-4"}`}>
+          {canInstall && (
+            <button
+              onClick={() => { setOpen(false); install(); }}
+              className="px-4 py-2 text-sm text-left text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+            >
+              Install app
+            </button>
+          )}
+          <NavLink
+            to="/trash"
+            onClick={() => setOpen(false)}
+            className={({ isActive }) =>
+              `block px-4 py-2 text-sm text-left ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`
+            }
+          >
+            Trash
+          </NavLink>
+          <button
+            onClick={() => { setOpen(false); onOpenTags(); }}
+            className="px-4 py-2 text-sm text-left text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+          >
+            Counter tags...
+          </button>
+          <button
+            onClick={() => onToggleAutoCollapse()}
+            className="px-4 py-2 text-sm text-left text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 flex justify-between items-center"
+          >
+            Auto-collapse
+            <div className={`w-7 h-4 rounded-full relative transition-colors ${autoCollapse ? "bg-blue-600" : "bg-zinc-700"}`}>
+              <div className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${autoCollapse ? "left-[14px]" : "left-[2px]"}`} />
+            </div>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DEFAULT_LEFT_W = 256;
+const MIN_SIDE_W = 180;
+const HANDLE_W = 6;
 
 // Captures the browser's beforeinstallprompt so we can trigger it from a button.
 function useInstallPrompt() {
@@ -389,8 +409,51 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   const [creatingSpace, setCreatingSpace] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const { canInstall, install } = useInstallPrompt();
   const qc = useQueryClient();
+
+  const [desktopNavOpen, setDesktopNavOpen] = useState(() => {
+    return localStorage.getItem("yumi:desktopNavOpen") !== "false";
+  });
+  const [leftW, setLeftW] = useState(() => {
+    const saved = localStorage.getItem("yumi:leftW");
+    return saved ? Number(saved) : DEFAULT_LEFT_W;
+  });
+  const [autoCollapse, setAutoCollapse] = useState(() => {
+    return localStorage.getItem("yumi:autoCollapse") === "true";
+  });
+  const dragging = useRef<boolean>(false);
+
+  useEffect(() => { localStorage.setItem("yumi:desktopNavOpen", String(desktopNavOpen)); }, [desktopNavOpen]);
+  useEffect(() => { localStorage.setItem("yumi:leftW", String(leftW)); }, [leftW]);
+  useEffect(() => { localStorage.setItem("yumi:autoCollapse", String(autoCollapse)); }, [autoCollapse]);
+
+  const location = useLocation();
+  useEffect(() => {
+    if (autoCollapse && location.pathname.startsWith("/items/")) {
+      setDesktopNavOpen(false);
+    }
+  }, [location.pathname, autoCollapse]);
+
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      if (!dragging.current) return;
+      const newW = Math.max(MIN_SIDE_W, Math.min(e.clientX, window.innerWidth - MIN_SIDE_W));
+      setLeftW(newW);
+    }
+    function onUp() {
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, []);
 
   const { data: spaces = [] } = useQuery({
     queryKey: ["spaces"],
@@ -404,31 +467,30 @@ export default function App() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setCreatingSpace(false); },
   });
 
+  const [searchParams] = useSearchParams();
+  let activeSpaceId = Number(searchParams.get("space")) || null;
+  if (!activeSpaceId && location.state) {
+    const from = (location.state as { from?: string }).from;
+    if (from) {
+      activeSpaceId = Number(new URLSearchParams(from).get("space")) || null;
+    }
+  }
+  const activeSpace = activeSpaceId ? spaces.find(s => s.id === activeSpaceId) : undefined;
+
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-zinc-800 px-4 py-2 flex items-center gap-2">
+    <div className="min-h-screen flex flex-col md:flex-row bg-zinc-950">
+      <header className="md:hidden border-b border-zinc-800 px-4 py-3 flex items-center gap-3">
         <button
-          className="md:hidden p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+          className="p-1 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
           onClick={() => setMobileNavOpen(true)}
           aria-label="Open navigation"
         >
-          <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <svg width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
             <path d="M2 4.5h14M2 9h14M2 13.5h14"/>
           </svg>
         </button>
-        <span className="font-semibold text-zinc-100">yumi</span>
-        <nav className="hidden md:flex gap-1 ml-4 flex-wrap items-center">
-          <NavLink to="/" end className={navClass}>Library</NavLink>
-          <SpaceNavItems spaces={spaces} />
-          <button
-            onClick={() => setCreatingSpace(true)}
-            className="px-2 py-1.5 rounded text-sm text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition"
-            title="New space"
-          >
-            +
-          </button>
-        </nav>
-        <div className="flex gap-1 ml-auto items-center">
+        <span className="font-semibold text-zinc-100 text-lg">yumi</span>
+        <div className="flex gap-2 ml-auto items-center">
           {canInstall && (
             <button
               onClick={install}
@@ -438,16 +500,116 @@ export default function App() {
               Install
             </button>
           )}
-          <div className="hidden md:block"><OverflowMenu /></div>
           <button
             onClick={() => setAdding(true)}
-            className="ml-2 px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium"
+            className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium"
           >
             + Add
           </button>
         </div>
       </header>
-      <main className="flex-1">
+
+      {!desktopNavOpen && (
+        <aside className="hidden md:flex flex-col w-[64px] shrink-0 border-r border-zinc-800 bg-zinc-950 p-4">
+          <div className="flex flex-col gap-4">
+            <button
+              onClick={() => setDesktopNavOpen(true)}
+              className="p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 w-8 h-8 flex items-center justify-center -ml-1.5"
+              title="Open menu"
+            >
+              <svg width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M2 4.5h14M2 9h14M2 13.5h14"/>
+              </svg>
+            </button>
+
+            <button
+              onClick={() => setAdding(true)}
+              className="p-1.5 rounded bg-blue-600 hover:bg-blue-500 text-zinc-100 shadow w-8 h-8 flex items-center justify-center -ml-1.5"
+              title="Add item"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+          </div>
+
+          <SettingsMenu
+            canInstall={canInstall}
+            install={install}
+            onOpenTags={() => setSettingsOpen(true)}
+            collapsed={true}
+            autoCollapse={autoCollapse}
+            onToggleAutoCollapse={() => setAutoCollapse(!autoCollapse)}
+          />
+        </aside>
+      )}
+
+      {desktopNavOpen && (
+        <>
+          <aside style={{ width: leftW }} className="hidden md:flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 p-4">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setDesktopNavOpen(false)}
+                  className="p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 w-8 h-8 flex items-center justify-center -ml-1.5"
+                  title="Close menu"
+                >
+                  <svg width="20" height="20" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <path d="M2 4.5h14M2 9h14M2 13.5h14"/>
+                  </svg>
+                </button>
+                <span className="font-semibold text-zinc-100 text-xl tracking-wide">yumi</span>
+              </div>
+              <button
+                onClick={() => setAdding(true)}
+                className="px-2 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-sm font-medium shadow"
+                title="Add item"
+              >
+                + Add
+              </button>
+            </div>
+
+        <nav className="flex flex-col gap-1 flex-1 overflow-y-auto">
+          <NavLink to="/" end className={navClass}>Library</NavLink>
+          
+          <div className="mt-6 mb-2 text-[10px] font-bold text-zinc-500 uppercase tracking-wider px-3">
+            Spaces
+          </div>
+          <SpaceNavItems spaces={spaces} />
+          <button
+            onClick={() => setCreatingSpace(true)}
+            className="text-left px-3 py-2 rounded text-sm text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors mt-2"
+          >
+            + New space
+          </button>
+        </nav>
+
+        <SettingsMenu
+          canInstall={canInstall}
+          install={install}
+          onOpenTags={() => setSettingsOpen(true)}
+          autoCollapse={autoCollapse}
+          onToggleAutoCollapse={() => setAutoCollapse(!autoCollapse)}
+        />
+      </aside>
+
+      <div
+        className="hidden md:flex shrink-0 cursor-col-resize items-center justify-center hover:bg-zinc-700/40 active:bg-zinc-600/40 transition-colors"
+        style={{ width: HANDLE_W }}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          dragging.current = true;
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+        }}
+      >
+        <div className="w-px h-8 bg-zinc-700 rounded-full" />
+      </div>
+      </>
+      )}
+
+      <main className="flex-1 min-w-0 flex flex-col h-[calc(100vh-3.5rem)] md:h-screen">
         <Routes>
           <Route path="/" element={<Library />} />
           <Route path="/items/:id" element={<ItemDetail />} />
@@ -461,13 +623,14 @@ export default function App() {
           onCreateSpace={() => { setMobileNavOpen(false); setCreatingSpace(true); }}
         />
       )}
-      {adding && <AddItemDialog onClose={() => setAdding(false)} />}
+      {adding && <AddItemDialog activeSpace={activeSpace} onClose={() => setAdding(false)} />}
       {creatingSpace && (
         <SpaceDialog
-          onSave={(name, namespaces, tags, labels) => createSpace.mutate({ name, namespaces, tags, labels })}
+          onSave={(name, namespaces, tags, labels, templates) => createSpace.mutate({ name, namespaces, tags, labels })}
           onClose={() => setCreatingSpace(false)}
         />
       )}
+      {settingsOpen && <CounterTagsDialog onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }

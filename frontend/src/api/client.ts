@@ -3,8 +3,6 @@ export type ItemStatus = "plan" | "in-progress" | "completed" | "archived";
 
 export interface Tag { id: number; name: string; count: number }
 
-export interface RelatedLink { label: string; url: string }
-
 export interface Item {
   id: number;
   kind: ItemKind;
@@ -20,8 +18,6 @@ export interface Item {
   status: ItemStatus;
   progress: number;
   total: number | null;
-  anilist_id: number | null;
-  related_links: RelatedLink[];
   needs_enrichment: boolean;
   access_count: number;
   last_accessed_at: string | null;
@@ -68,8 +64,12 @@ export interface ItemPatch {
   thumbnail_url?: string | null;
   progress?: number;
   total?: number | null;
-  anilist_id?: number | null;
-  related_links?: RelatedLink[];
+}
+
+export interface Template {
+  id: string;
+  name: string;
+  content: string;
 }
 
 export interface Space {
@@ -79,6 +79,8 @@ export interface Space {
   tags: string[];
   // Per-Space display labels for the 3 active statuses; null = canonical defaults.
   labels: Record<string, string> | null;
+  note_template_md: string;
+  templates: Template[];
   created_at: string;
 }
 
@@ -182,9 +184,10 @@ export const api = {
   listSpaces: () => req<Space[]>("GET", `/spaces`),
   createSpace: (name: string, namespaces: string[], tags: string[], labels?: Record<string, string> | null) =>
     req<Space>("POST", `/spaces`, { name, namespaces, tags, labels }),
-  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[]; labels?: Record<string, string> | null }) =>
+  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[]; labels?: Record<string, string> | null; note_template_md?: string; templates?: Template[] }) =>
     req<Space>("PATCH", `/spaces/${id}`, data),
   deleteSpace: (id: number) => req<void>("DELETE", `/spaces/${id}`),
+  askAI: (prompt: string) => req<{ response: string }>("POST", `/ai/ask`, { prompt }),
 };
 
 
