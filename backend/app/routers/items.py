@@ -116,6 +116,17 @@ async def create_item(payload: ItemCreate, db: Session = Depends(get_session)):
             notes_md=payload.notes_md or (payload.note_body or ""),
             status=payload.status,
         )
+    if item.title or getattr(item, "description", ""):
+        from ..ai import process_with_ai
+        new_tags, new_notes = await process_with_ai(
+            title=item.title,
+            description=getattr(item, "description", "") or "",
+            current_notes=item.notes_md or "",
+            user_tags=payload.tags or [],
+            db=db
+        )
+        item.notes_md = new_notes
+        payload.tags = new_tags
 
     db.add(item)
     db.flush()
@@ -258,10 +269,6 @@ def patch_item(
     data = payload.model_dump(exclude_unset=True)
     if "tags" in data:
         set_item_tags(db, item, data.pop("tags") or [])
-    if "related_links" in data:
-        # Drop blank rows (no url) so half-typed entries don't persist.
-        links = [l for l in (data.pop("related_links") or []) if l.get("url", "").strip()]
-        item.related_links_json = json.dumps(links)
     for k, v in data.items():
         setattr(item, k, v)
     item.updated_at = utcnow_iso()

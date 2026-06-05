@@ -10,7 +10,7 @@ def test_health(client):
 def test_add_youtube_and_dedupe(client):
     r = client.post("/api/items", json={
         "url": "https://youtu.be/dQw4w9WgXcQ",
-        "tags": ["music", "Classic"],
+        "tags": ["genre:music", "type:classic"],
         "status": "plan",
     })
     assert r.status_code == 201, r.text
@@ -19,7 +19,7 @@ def test_add_youtube_and_dedupe(client):
     assert body["url"] == "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
     assert body["title"] == "Stub Title"
     assert body["duration_sec"] == 123
-    assert sorted(t["name"] for t in body["tags"]) == ["classic", "music"]
+    assert sorted(t["name"] for t in body["tags"]) == ["genre:music", "type:classic"]
 
     # Re-add the same canonical url via a different surface form -> 409
     r2 = client.post("/api/items", json={
@@ -33,14 +33,14 @@ def test_patch_tags_and_notes(client):
     item = client.post("/api/items", json={"url": "https://youtu.be/abc123"}).json()
     r = client.patch(f"/api/items/{item['id']}", json={
         "notes_md": "watched on a rickroll bender",
-        "tags": ["rickroll", "lol"],
+        "tags": ["meme:rickroll", "mood:lol"],
         "status": "completed",
     })
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "completed"
     assert "rickroll" in body["notes_md"]
-    assert sorted(t["name"] for t in body["tags"]) == ["lol", "rickroll"]
+    assert sorted(t["name"] for t in body["tags"]) == ["meme:rickroll", "mood:lol"]
 
 
 def test_patch_snapshot_flag(client):
@@ -53,17 +53,17 @@ def test_patch_snapshot_flag(client):
         return len(client.get(f"/api/items/{iid}/revisions").json())
 
     # Normal edit -> snapshots prior state.
-    client.patch(f"/api/items/{iid}", json={"tags": ["a"]})
+    client.patch(f"/api/items/{iid}", json={"tags": ["sys:a"]})
     assert rev_count() == 1
 
     # Lightweight grid edit -> no new revision.
-    r = client.patch(f"/api/items/{iid}", params={"snapshot": "false"}, json={"tags": ["a", "b"]})
+    r = client.patch(f"/api/items/{iid}", params={"snapshot": "false"}, json={"tags": ["sys:a", "sys:b"]})
     assert r.status_code == 200
-    assert sorted(t["name"] for t in r.json()["tags"]) == ["a", "b"]
+    assert sorted(t["name"] for t in r.json()["tags"]) == ["sys:a", "sys:b"]
     assert rev_count() == 1
 
     # Normal edit again -> history still works (snapshots the ["a","b"] state).
-    client.patch(f"/api/items/{iid}", json={"tags": ["a", "b", "c"]})
+    client.patch(f"/api/items/{iid}", json={"tags": ["sys:a", "sys:b", "sys:c"]})
     assert rev_count() == 2
 
 
@@ -86,19 +86,19 @@ def test_tag_and_and_not(client):
         it = client.post("/api/items", json={"url": url}).json()
         items.append(it)
     # x1: rust + tutorial   x2: rust + beginner   x3: tutorial only
-    client.patch(f"/api/items/{items[0]['id']}", json={"tags": ["rust", "tutorial"]})
-    client.patch(f"/api/items/{items[1]['id']}", json={"tags": ["rust", "beginner"]})
-    client.patch(f"/api/items/{items[2]['id']}", json={"tags": ["tutorial"]})
+    client.patch(f"/api/items/{items[0]['id']}", json={"tags": ["lang:rust", "level:tutorial"]})
+    client.patch(f"/api/items/{items[1]['id']}", json={"tags": ["lang:rust", "level:beginner"]})
+    client.patch(f"/api/items/{items[2]['id']}", json={"tags": ["level:tutorial"]})
 
-    r = client.get("/api/items", params={"tags": "rust,tutorial", "tag_op": "AND"})
+    r = client.get("/api/items", params={"tags": "lang:rust,level:tutorial", "tag_op": "AND"})
     ids = [i["id"] for i in r.json()]
     assert ids == [items[0]["id"]]
 
-    r = client.get("/api/items", params={"tags": "rust", "exclude_tags": "beginner"})
+    r = client.get("/api/items", params={"tags": "lang:rust", "exclude_tags": "level:beginner"})
     ids = [i["id"] for i in r.json()]
     assert ids == [items[0]["id"]]
 
-    r = client.get("/api/items", params={"tags": "rust,tutorial", "tag_op": "OR"})
+    r = client.get("/api/items", params={"tags": "lang:rust,level:tutorial", "tag_op": "OR"})
     ids = sorted(i["id"] for i in r.json())
     assert ids == sorted(it["id"] for it in items)
 
@@ -180,27 +180,6 @@ def test_progress_tracking(client):
     assert restored.status_code == 200
 
 
-def test_anilist_and_related_links(client):
-    item = client.post("/api/items", json={"note_title": "Frieren", "tags": ["source:anime"]}).json()
-    assert item["anilist_id"] is None and item["related_links"] == []
-
-    body = client.patch(f"/api/items/{item['id']}", json={
-        "anilist_id": 154587,
-        "related_links": [
-            {"label": "MAL", "url": "https://myanimelist.net/anime/52991"},
-            {"label": "", "url": "https://anilist.co/anime/154587"},
-            {"label": "blank", "url": "   "},  # no real url -> dropped
-        ],
-    }).json()
-    assert body["anilist_id"] == 154587
-    assert len(body["related_links"]) == 2
-    assert body["related_links"][0] == {"label": "MAL", "url": "https://myanimelist.net/anime/52991"}
-
-    # Clearing the id; related_links untouched when omitted from the patch
-    assert client.patch(f"/api/items/{item['id']}", json={"anilist_id": None}).json()["anilist_id"] is None
-    assert len(client.get(f"/api/items/{item['id']}").json()["related_links"]) == 2
-
-
 def test_record_access(client):
     item = client.post("/api/items", json={"url": "https://youtu.be/acc1"}).json()
     iid = item["id"]
@@ -265,7 +244,7 @@ def test_freeform_note(client):
     r = client.post("/api/items", json={
         "note_title": "shower thought",
         "note_body": "what if tags were just keys",
-        "tags": ["ideas"],
+        "tags": ["cat:ideas"],
     })
     assert r.status_code == 201
     body = r.json()
@@ -275,7 +254,7 @@ def test_freeform_note(client):
 
 def test_tag_autocomplete(client):
     item = client.post("/api/items", json={"url": "https://youtu.be/tag1"}).json()
-    client.patch(f"/api/items/{item['id']}", json={"tags": ["rust", "runtime", "react"]})
-    r = client.get("/api/tags", params={"prefix": "ru"})
+    client.patch(f"/api/items/{item['id']}", json={"tags": ["lang:rust", "type:runtime", "lang:react"]})
+    r = client.get("/api/tags", params={"prefix": "lang:r"})
     names = [t["name"] for t in r.json()]
-    assert set(names) == {"rust", "runtime"}
+    assert set(names) == {"lang:react", "lang:rust"}

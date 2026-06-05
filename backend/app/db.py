@@ -78,11 +78,10 @@ _COLUMN_MIGRATIONS = [
     ("items", "total", "INTEGER"),
     ("item_revisions", "progress", "INTEGER NOT NULL DEFAULT 0"),
     ("item_revisions", "total", "INTEGER"),
-    ("items", "anilist_id", "INTEGER"),
-    ("items", "related_links_json", "TEXT NOT NULL DEFAULT '[]'"),
     ("items", "access_count", "INTEGER NOT NULL DEFAULT 0"),
     ("items", "last_accessed_at", "TEXT"),
     ("spaces", "labels_json", "TEXT"),
+    ("spaces", "note_template_md", "TEXT NOT NULL DEFAULT ''"),
 ]
 
 # Columns retired from the model and dropped from upgraded DBs. SQLite 3.35+
@@ -91,6 +90,8 @@ _COLUMN_MIGRATIONS = [
 _DROP_COLUMNS = [
     ("items", "source"),
     ("item_revisions", "source"),
+    ("items", "anilist_id"),
+    ("items", "related_links_json"),
 ]
 
 # One-time rename of the watch-specific status names to generic ones. A clean

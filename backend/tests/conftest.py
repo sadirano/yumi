@@ -49,6 +49,11 @@ def client(tmp_data_dir, monkeypatch):
     from fastapi.testclient import TestClient
     from app.main import app
     from app.db import init_db, engine
+    from app import ai
+
+    async def mock_process(title, description, current_notes, user_tags, db):
+        return user_tags, current_notes
+    monkeypatch.setattr(ai, "process_with_ai", mock_process)
 
     init_db()
     with TestClient(app) as c:

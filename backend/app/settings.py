@@ -3,6 +3,9 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(".env")
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +43,36 @@ class Settings(BaseSettings):
     port: int = 8765
     enrichment_timeout_sec: float = 15.0
     max_upload_mb: int = 500
+
+    # AI Integration
+    ai_order: str = ""
+
+    @property
+    def ai_providers(self) -> list[dict[str, str]]:
+        import os
+        providers = {}
+        for k, v in os.environ.items():
+            if k.startswith("YUMI_AI_PROVIDER_"):
+                name = k[len("YUMI_AI_PROVIDER_"):].lower()
+                provider_data = {"name": name, "url": "", "key": "", "model": ""}
+                for part in v.split(","):
+                    if "=" not in part: continue
+                    pk, pv = part.split("=", 1)
+                    provider_data[pk.strip().lower()] = pv.strip()
+                providers[name] = provider_data
+                
+        if not providers:
+            return []
+            
+        order = [n.strip().lower() for n in self.ai_order.split(",") if n.strip()]
+        if not order:
+            order = list(providers.keys())
+            
+        result = []
+        for name in order:
+            if name in providers and providers[name]["url"] and providers[name]["key"]:
+                result.append(providers[name])
+        return result
 
     @property
     def db_path(self) -> Path:

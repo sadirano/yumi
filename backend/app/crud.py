@@ -15,7 +15,7 @@ def normalize_tag(name: str) -> str:
 
 
 def get_or_create_tags(db: Session, names: Iterable[str]) -> list[Tag]:
-    cleaned = sorted({normalize_tag(n) for n in names if n and n.strip()})
+    cleaned = sorted({normalize_tag(n) for n in names if n and n.strip() and ":" in n})
     if not cleaned:
         return []
     existing = {t.name: t for t in db.scalars(select(Tag).where(Tag.name.in_(cleaned))).all()}

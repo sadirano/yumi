@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .backup import run_startup_backup
 from .crud import sweep_orphan_tags, sweep_orphan_uploads
 from .db import SessionLocal, init_db
-from .routers import items, saved_filters, spaces, tags, trash
+from .routers import items, saved_filters, spaces, tags, trash, ai
 from .settings import settings
 
 # In a PyInstaller build the static SPA is bundled via datas=[("app/static",
@@ -62,6 +62,7 @@ app.include_router(tags.router)
 app.include_router(spaces.router)
 app.include_router(saved_filters.router)
 app.include_router(trash.router)
+app.include_router(ai.router)
 
 
 @app.get("/api/health")
