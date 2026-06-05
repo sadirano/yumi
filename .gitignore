@@ -27,3 +27,5 @@ backend/build/
 .vscode/
 .idea/
 .claude/
+.antigravitycli/
+.venv/
