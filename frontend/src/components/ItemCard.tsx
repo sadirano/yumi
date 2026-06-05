@@ -98,9 +98,7 @@ export default function ItemCard({ item, layout = "normal", space, onToggleWatch
 
   function btnBase(variant: "overlay" | "panel") {
     const bg = variant === "overlay" ? "bg-black/80" : "bg-zinc-800";
-    // Fixed square footprint so the stacked glyph buttons (↗ 🏷 ✓ +) line up
-    // uniformly regardless of each character's natural width — no mono font needed.
-    return `text-xs w-6 h-6 flex items-center justify-center rounded ${bg}`;
+    return `text-sm w-8 h-8 flex items-center justify-center rounded ${bg}`;
   }
 
   // Always-visible "open the resource" button — the whole point is reaching the

@@ -1,14 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import ReactMarkdown from "react-markdown";
-import { api, ItemStatus, RelatedLink, Revision, Space } from "../api/client";
+import MarkdownRenderer from "../components/MarkdownRenderer";
+import { api, ItemStatus, RelatedLink, Revision, Space, itemLink } from "../api/client";
 import { isSerialized } from "../lib/serialized";
 import { anilistUrl } from "../lib/anilist";
 import { DEFAULT_LABELS, STATUSES } from "../lib/status";
 import TagInput from "../components/TagInput";
 
 type Layout = "split" | "notes";
+
+const DEFAULT_LEFT_W = 280;
+const DEFAULT_RIGHT_W = 300;
+const MIN_SIDE_W = 180;
+const HANDLE_W = 6;
 
 export default function ItemDetail() {
   const { id } = useParams();
@@ -43,7 +48,62 @@ export default function ItemDetail() {
   const [relatedLinks, setRelatedLinks] = useState<RelatedLink[]>([]);
   const [preview, setPreview] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const [layout, setLayout] = useState<Layout>("split");
+  const [layout, setLayout] = useState<Layout>(() => {
+    const saved = localStorage.getItem("yumi:defaultLayout");
+    return saved === "notes" ? "notes" : "split";
+  });
+
+  function toggleLayout() {
+    setLayout(prev => prev === "split" ? "notes" : "split");
+  }
+
+  // Resizable column widths.
+  const [leftW, setLeftW] = useState(() => {
+    const saved = localStorage.getItem("yumi:defaultLeftW");
+    return saved ? Number(saved) : DEFAULT_LEFT_W;
+  });
+  const [rightW, setRightW] = useState(() => {
+    const saved = localStorage.getItem("yumi:defaultRightW");
+    return saved ? Number(saved) : DEFAULT_RIGHT_W;
+  });
+  const dragging = useRef<"left" | "right" | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const [layoutSaved, setLayoutSaved] = useState(false);
+  function saveLayoutAsDefault() {
+    localStorage.setItem("yumi:defaultLayout", layout);
+    localStorage.setItem("yumi:defaultLeftW", String(leftW));
+    localStorage.setItem("yumi:defaultRightW", String(rightW));
+    setLayoutSaved(true);
+    setMenuOpen(false);
+    setTimeout(() => setLayoutSaved(false), 2000);
+  }
+
+  // Pointer-based drag for resize handles.
+  useEffect(() => {
+    function onMove(e: PointerEvent) {
+      if (!dragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      if (dragging.current === "left") {
+        const newW = Math.max(MIN_SIDE_W, Math.min(e.clientX - rect.left, rect.width - rightW - MIN_SIDE_W - HANDLE_W * 2));
+        setLeftW(newW);
+      } else {
+        const newW = Math.max(MIN_SIDE_W, Math.min(rect.right - e.clientX, rect.width - leftW - MIN_SIDE_W - HANDLE_W * 2));
+        setRightW(newW);
+      }
+    }
+    function onUp() {
+      dragging.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [leftW, rightW]);
   const ready = useRef(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const notesFileRef = useRef<HTMLInputElement>(null);
@@ -85,6 +145,18 @@ export default function ItemDetail() {
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
   }, [item?.id]);
+
+  // Ctrl+E toggles edit/preview for the notes panel.
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.ctrlKey && e.key === "e" && !e.shiftKey && !e.altKey && !e.metaKey) {
+        e.preventDefault();
+        setPreview(p => !p);
+      }
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, []);
 
   const save = useMutation({
     mutationFn: (data: { title: string; notes_md: string; tags: string[]; status: ItemStatus; progress: number; total: number | null; anilist_id: number | null; related_links: RelatedLink[] }) =>
@@ -140,7 +212,7 @@ export default function ItemDetail() {
   function pingAccess() {
     api.pingAccess(itemId)
       .then(() => qc.invalidateQueries({ queryKey: ["item", itemId] }))
-      .catch(() => {});
+      .catch(() => { });
   }
 
   useEffect(() => {
@@ -339,10 +411,22 @@ export default function ItemDetail() {
           )}
           <button
             onClick={() => { setThumbInput(item.thumbnail_url || ""); setThumbEdit(true); }}
-            className="absolute bottom-2 right-2 px-2 py-1 text-xs bg-black/70 hover:bg-black/90 rounded md:opacity-0 md:group-hover/thumb:opacity-100 transition-opacity"
+            className="absolute bottom-2 right-2 px-2 py-1 text-xs bg-black/70 hover:bg-black/90 rounded md:opacity-0 md:group-hover/thumb:opacity-100 transition-opacity z-10"
           >
             Change image
           </button>
+          {itemLink(item) && (
+            <a
+              href={itemLink(item)!}
+              target="_blank"
+              rel="noreferrer"
+              onClick={pingAccess}
+              className="absolute top-2 right-2 text-sm w-8 h-8 flex items-center justify-center rounded bg-black/80 hover:bg-blue-700 text-center z-10 md:opacity-0 md:group-hover/thumb:opacity-100 transition-opacity"
+              title="Open link"
+            >
+              ↗
+            </a>
+          )}
         </>
       )}
     </div>
@@ -357,13 +441,12 @@ export default function ItemDetail() {
           opened {item.access_count}×{item.last_accessed_at ? ` · ${fmtTime(item.last_accessed_at)}` : ""}
         </span>
       )}
-      {item.url && <a href={item.url} target="_blank" rel="noreferrer" onClick={pingAccess} className="text-blue-400 hover:underline ml-auto">open</a>}
     </div>
   );
 
   const notesHeader = (
     <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-      <span>Notes (markdown)</span>
+      <span>Notes</span>
       <div className="flex items-center gap-2">
         {!preview && (
           <>
@@ -378,7 +461,10 @@ export default function ItemDetail() {
             <input ref={notesFileRef} type="file" accept="image/*" className="hidden" onChange={handleNotesFileSelect} />
           </>
         )}
-        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">{preview ? "edit" : "preview"}</button>
+        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">
+          {preview ? "edit" : "preview"}
+          <kbd className="ml-1.5 text-[10px] text-zinc-600">Ctrl+E</kbd>
+        </button>
       </div>
     </div>
   );
@@ -388,8 +474,8 @@ export default function ItemDetail() {
     <div className="flex-1 min-h-0 flex flex-col">
       {notesHeader}
       {preview ? (
-        <div className="prose prose-invert prose-sm max-w-none flex-1 overflow-auto bg-zinc-900 rounded p-3 border border-zinc-800">
-          <ReactMarkdown>{notes || "_no notes_"}</ReactMarkdown>
+        <div className="flex-1 overflow-auto bg-zinc-900 rounded p-3 border border-zinc-800">
+          <MarkdownRenderer>{notes || "_no notes_"}</MarkdownRenderer>
         </div>
       ) : (
         <textarea
@@ -411,8 +497,8 @@ export default function ItemDetail() {
     <div className="flex flex-col">
       {notesHeader}
       {preview ? (
-        <div className="prose prose-invert prose-sm max-w-none bg-zinc-900 rounded p-3 border border-zinc-800 min-h-[8rem]">
-          <ReactMarkdown>{notes || "_no notes_"}</ReactMarkdown>
+        <div className="bg-zinc-900 rounded p-3 border border-zinc-800 min-h-[8rem]">
+          <MarkdownRenderer>{notes || "_no notes_"}</MarkdownRenderer>
         </div>
       ) : (
         <textarea
@@ -663,11 +749,11 @@ export default function ItemDetail() {
       </span>
       <div className="ml-auto flex items-center gap-2">
         <button
-          onClick={() => setLayout(l => l === "split" ? "notes" : "split")}
+          onClick={toggleLayout}
           className="hidden md:block text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded hover:bg-zinc-800"
-          title={layout === "split" ? "Focus on notes" : "Show thumbnail"}
+          title={layout === "split" ? "3-column layout" : "2-column layout"}
         >
-          {layout === "split" ? "notes view" : "split view"}
+          {layout === "split" ? "☰ focus" : "⬒ split"}
         </button>
         <div ref={menuRef} className="relative">
           <button
@@ -693,6 +779,12 @@ export default function ItemDetail() {
                   {refresh.isPending ? "Refreshing..." : "Re-fetch metadata"}
                 </button>
               )}
+              <button
+                className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-800 hidden md:block"
+                onMouseDown={saveLayoutAsDefault}
+              >
+                {layoutSaved ? "✓ Saved!" : "Save layout as default"}
+              </button>
               <button
                 className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-zinc-800 disabled:opacity-50"
                 onMouseDown={() => del.mutate()}
@@ -761,22 +853,66 @@ export default function ItemDetail() {
         </div>
       </div>
 
-      {/* ── Desktop: notes-focused layout ────────────────────────── */}
+      {/* ── Desktop: notes-focused 3-column layout ──────────────── */}
       {layout === "notes" && (
-        <div className="hidden md:flex flex-col gap-3 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
-          {topBar}
-          <div className="flex gap-6 flex-1 min-h-0 overflow-hidden">
-            <div className="flex flex-col gap-3 w-64 shrink-0 overflow-y-auto">
-              <div className="aspect-video w-full shrink-0">{media}</div>
-              {meta}
-              {fields}
-            </div>
-            <div className="flex-1 min-h-0 flex flex-col">{notesPanelFill}</div>
+        <div
+          ref={containerRef}
+          className="hidden md:flex h-[calc(100vh-2.75rem)] overflow-hidden"
+        >
+          {/* Left column — image + meta */}
+          <div
+            className="flex flex-col gap-3 p-4 overflow-y-auto shrink-0"
+            style={{ width: leftW }}
+          >
+            <div className="aspect-video w-full shrink-0">{media}</div>
+            {meta}
+          </div>
+
+          {/* Resize handle — left */}
+          <div
+            className="shrink-0 cursor-col-resize flex items-center justify-center hover:bg-zinc-700/40 active:bg-zinc-600/40 transition-colors"
+            style={{ width: HANDLE_W }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              dragging.current = "left";
+              document.body.style.cursor = "col-resize";
+              document.body.style.userSelect = "none";
+            }}
+          >
+            <div className="w-px h-8 bg-zinc-700 rounded-full" />
+          </div>
+
+          {/* Center column — topBar + notes */}
+          <div className="flex-1 min-w-0 flex flex-col gap-3 p-4 overflow-hidden">
+            {topBar}
+            {notesPanelFill}
+          </div>
+
+          {/* Resize handle — right */}
+          <div
+            className="shrink-0 cursor-col-resize flex items-center justify-center hover:bg-zinc-700/40 active:bg-zinc-600/40 transition-colors"
+            style={{ width: HANDLE_W }}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              dragging.current = "right";
+              document.body.style.cursor = "col-resize";
+              document.body.style.userSelect = "none";
+            }}
+          >
+            <div className="w-px h-8 bg-zinc-700 rounded-full" />
+          </div>
+
+          {/* Right column — fields */}
+          <div
+            className="flex flex-col gap-3 p-4 overflow-y-auto shrink-0"
+            style={{ width: rightW }}
+          >
+            {fields}
           </div>
         </div>
       )}
 
-      {/* ── Desktop: split layout ─────────────────────────────────── */}
+      {/* ── Desktop: split layout (2-column, original) ────────────── */}
       {layout === "split" && (
         <div className="hidden md:grid md:grid-cols-[2fr_3fr] gap-6 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
           <div className="flex flex-col gap-3 min-h-0">
