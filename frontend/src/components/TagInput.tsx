@@ -110,9 +110,11 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
       .split(",")
       .map(s => s.trim().toLowerCase().replace(/\s+/g, "-"))
       .filter(Boolean);
-    if (!parts.length) return;
+    const valid = parts.filter(p => p.includes(":"));
+    if (parts.length > 0 && valid.length === 0) return; // Keep input if all invalid
+    if (!valid.length) return;
     const next = [...value];
-    for (const p of parts) if (!next.includes(p)) next.push(p);
+    for (const p of valid) if (!next.includes(p)) next.push(p);
     if (next.length !== value.length) onChange(next);
     setInput("");
     setSuggestions([]);

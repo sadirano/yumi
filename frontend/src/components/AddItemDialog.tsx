@@ -1,22 +1,23 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { api, ApiError, ItemCreate, ItemStatus } from "../api/client";
+import { api, ApiError, ItemCreate, ItemStatus, Space } from "../api/client";
 import { DEFAULT_LABELS, STATUSES } from "../lib/status";
 import TagInput from "./TagInput";
 
 interface Props {
+  activeSpace?: Space;
   onClose: () => void;
 }
 
 type Mode = "url" | "file" | "note";
 
-export default function AddItemDialog({ onClose }: Props) {
+export default function AddItemDialog({ activeSpace, onClose }: Props) {
   const [mode, setMode] = useState<Mode>("url");
   const [url, setUrl] = useState("");
   const [filePath, setFilePath] = useState("");
   const [noteTitle, setNoteTitle] = useState("");
-  const [noteBody, setNoteBody] = useState("");
+  const [noteBody, setNoteBody] = useState(activeSpace?.note_template_md || "");
   const [tags, setTags] = useState<string[]>([]);
   const [status, setStatus] = useState<ItemStatus>("plan");
   const [dupId, setDupId] = useState<number | null>(null);

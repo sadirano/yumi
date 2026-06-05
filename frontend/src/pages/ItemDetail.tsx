@@ -1,14 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import MarkdownRenderer from "../components/MarkdownRenderer";
-import { api, ItemStatus, RelatedLink, Revision, Space, itemLink } from "../api/client";
+import { api, ItemStatus, Revision, Space, Template, itemLink } from "../api/client";
 import { isSerialized } from "../lib/serialized";
-import { anilistUrl } from "../lib/anilist";
 import { DEFAULT_LABELS, STATUSES } from "../lib/status";
 import TagInput from "../components/TagInput";
-
-type Layout = "split" | "notes";
+import AiInput from "../components/AiInput";
 
 const DEFAULT_LEFT_W = 280;
 const DEFAULT_RIGHT_W = 300;
@@ -29,7 +27,23 @@ export default function ItemDetail() {
     queryFn: api.listSpaces,
     staleTime: 60_000,
   });
-  const activeSpace = fromSpaceId != null ? spaces.find(s => s.id === fromSpaceId) ?? null : null;
+  const [tags, setTags] = useState<string[]>([]);
+  const activeSpace = useMemo(() => {
+    if (fromSpaceId != null) {
+      const s = spaces.find(s => s.id === fromSpaceId);
+      if (s) return s;
+    }
+    // Infer from tags
+    if (tags.length > 0) {
+      for (const space of spaces) {
+        if (tags.some(t => space.namespaces.some(ns => t.startsWith(ns + ":")))) {
+          return space;
+        }
+      }
+    }
+    if (spaces.length === 1) return spaces[0];
+    return null;
+  }, [fromSpaceId, spaces, tags]);
 
   const { data: item, isLoading } = useQuery({
     queryKey: ["item", itemId],
@@ -37,25 +51,55 @@ export default function ItemDetail() {
     enabled: !!itemId,
   });
 
+  const { data: allTags = [] } = useQuery({
+    queryKey: ["tags"],
+    queryFn: () => api.listTags(),
+    staleTime: 30_000,
+  });
+
+  const updateSpace = useMutation({
+    mutationFn: (data: { id: number, templates: Template[] }) => api.updateSpace(data.id, { templates: data.templates }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["spaces"] });
+    }
+  });
+
+  const [savingTemplate, setSavingTemplate] = useState(false);
+
+  async function saveAsTemplate() {
+    if (!activeSpace || savingTemplate) return;
+    setSavingTemplate(true);
+    let name = `Template ${activeSpace.templates.length + 1}`;
+    try {
+      const prompt = `Based on the following template content, suggest a short, 1-3 word name for this template. Reply ONLY with the suggested name, no quotes or extra text.\n\nContent: ${notes.slice(0, 1000)}`;
+      const res = await api.askAI(prompt);
+      if (res.response && res.response.trim()) {
+        name = res.response.trim().replace(/^"|"$/g, "");
+      }
+    } catch (e) {
+      // ignore, fallback to base name
+    } finally {
+      const newTemplate: Template = { id: crypto.randomUUID(), name, content: notes };
+      updateSpace.mutate({ id: activeSpace.id, templates: [...activeSpace.templates, newTemplate] });
+      setSavingTemplate(false);
+    }
+  }
+
   const [notes, setNotes] = useState("");
   const [title, setTitle] = useState("");
-  const [tags, setTags] = useState<string[]>([]);
   const [status, setStatus] = useState<ItemStatus>("plan");
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState<number | null>(null);
-  const [anilistId, setAnilistId] = useState<number | null>(null);
-  const [editingAnilist, setEditingAnilist] = useState(false);
-  const [relatedLinks, setRelatedLinks] = useState<RelatedLink[]>([]);
   const [preview, setPreview] = useState(true);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const [layout, setLayout] = useState<Layout>(() => {
-    const saved = localStorage.getItem("yumi:defaultLayout");
-    return saved === "notes" ? "notes" : "split";
+  const [notesFontSize, setNotesFontSize] = useState(() => {
+    const saved = localStorage.getItem("yumi:notesFontSize");
+    return saved ? Number(saved) : 14;
   });
 
-  function toggleLayout() {
-    setLayout(prev => prev === "split" ? "notes" : "split");
-  }
+  useEffect(() => {
+    localStorage.setItem("yumi:notesFontSize", String(notesFontSize));
+  }, [notesFontSize]);
 
   // Resizable column widths.
   const [leftW, setLeftW] = useState(() => {
@@ -68,16 +112,6 @@ export default function ItemDetail() {
   });
   const dragging = useRef<"left" | "right" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-
-  const [layoutSaved, setLayoutSaved] = useState(false);
-  function saveLayoutAsDefault() {
-    localStorage.setItem("yumi:defaultLayout", layout);
-    localStorage.setItem("yumi:defaultLeftW", String(leftW));
-    localStorage.setItem("yumi:defaultRightW", String(rightW));
-    setLayoutSaved(true);
-    setMenuOpen(false);
-    setTimeout(() => setLayoutSaved(false), 2000);
-  }
 
   // Pointer-based drag for resize handles.
   useEffect(() => {
@@ -114,21 +148,9 @@ export default function ItemDetail() {
   const [thumbEdit, setThumbEdit] = useState(false);
   const [thumbInput, setThumbInput] = useState("");
 
-  const [copyOpen, setCopyOpen] = useState(false);
-  const [copyQuery, setCopyQuery] = useState("");
-  const [copyResults, setCopyResults] = useState<Awaited<ReturnType<typeof api.listItems>>>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<Revision[]>([]);
-
-  useEffect(() => {
-    if (!copyQuery.trim()) { setCopyResults([]); return; }
-    const t = setTimeout(async () => {
-      const results = await api.listItems({ q: copyQuery.trim(), limit: 6 });
-      setCopyResults(results.filter(r => r.id !== itemId));
-    }, 150);
-    return () => clearTimeout(t);
-  }, [copyQuery, itemId]);
 
   useEffect(() => {
     if (!item) return;
@@ -139,9 +161,6 @@ export default function ItemDetail() {
     setStatus(item.status);
     setProgress(item.progress);
     setTotal(item.total);
-    setAnilistId(item.anilist_id);
-    setEditingAnilist(false);
-    setRelatedLinks(item.related_links);
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
   }, [item?.id]);
@@ -159,7 +178,7 @@ export default function ItemDetail() {
   }, []);
 
   const save = useMutation({
-    mutationFn: (data: { title: string; notes_md: string; tags: string[]; status: ItemStatus; progress: number; total: number | null; anilist_id: number | null; related_links: RelatedLink[] }) =>
+    mutationFn: (data: { title: string; notes_md: string; tags: string[]; status: ItemStatus; progress: number; total: number | null }) =>
       api.patchItem(itemId, data),
     onMutate: () => setSaveStatus("saving"),
     onSuccess: () => {
@@ -175,13 +194,11 @@ export default function ItemDetail() {
     if (!ready.current) return;
     const t = setTimeout(() => {
       save.mutate({
-        title, notes_md: notes, tags, status, progress, total,
-        anilist_id: anilistId,
-        related_links: relatedLinks.filter(l => l.url.trim()),
+        title, notes_md: notes, tags, status, progress, total
       });
     }, 800);
     return () => clearTimeout(t);
-  }, [title, notes, tags, status, progress, total, anilistId, relatedLinks]);
+  }, [title, notes, tags, status, progress, total]);
 
   const del = useMutation({
     mutationFn: () => api.deleteItem(itemId),
@@ -198,8 +215,6 @@ export default function ItemDetail() {
       setStatus(updated.status);
       setProgress(updated.progress);
       setTotal(updated.total);
-      setAnilistId(updated.anilist_id);
-      setRelatedLinks(updated.related_links);
       setTimeout(() => { ready.current = true; }, 0);
       qc.invalidateQueries({ queryKey: ["item", itemId] });
       qc.invalidateQueries({ queryKey: ["items"] });
@@ -275,29 +290,6 @@ export default function ItemDetail() {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
-  const [editingLinkIdx, setEditingLinkIdx] = useState<number | null>(null);
-
-  function updateLink(i: number, field: "label" | "url", val: string) {
-    setRelatedLinks(prev => prev.map((l, j) => (j === i ? { ...l, [field]: val } : l)));
-  }
-  function addLink() {
-    setRelatedLinks(prev => { setEditingLinkIdx(prev.length); return [...prev, { label: "", url: "" }]; });
-  }
-  function removeLink(i: number) {
-    setRelatedLinks(prev => prev.filter((_, j) => j !== i));
-    setEditingLinkIdx(null);
-  }
-
-  function faviconUrl(url: string): string {
-    try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=32`; }
-    catch { return ""; }
-  }
-  function linkLabel(lnk: RelatedLink): string {
-    if (lnk.label) return lnk.label;
-    try { return new URL(lnk.url).hostname.replace(/^www\./, ""); }
-    catch { return lnk.url; }
   }
 
   async function uploadImage(file: File): Promise<string> {
@@ -432,7 +424,8 @@ export default function ItemDetail() {
     </div>
   );
 
-  const meta = (
+  const hasMeta = !!item.channel || !!item.published_at || item.access_count > 0;
+  const meta = hasMeta ? (
     <div className="flex items-center gap-2 text-xs text-zinc-400">
       {item.channel && <span>{item.channel}</span>}
       {item.published_at && <span>- {item.published_at}</span>}
@@ -442,39 +435,76 @@ export default function ItemDetail() {
         </span>
       )}
     </div>
-  );
+  ) : null;
 
   const notesHeader = (
-    <div className="flex items-center justify-between text-xs text-zinc-400 mb-1">
-      <span>Notes</span>
-      <div className="flex items-center gap-2">
+    <div className="flex items-start gap-3 mb-2 group">
+      <input
+        value={title}
+        onChange={e => setTitle(e.target.value)}
+        className="flex-1 bg-transparent text-2xl font-semibold outline-none border-b border-transparent focus:border-zinc-700 min-w-0"
+        placeholder="Title"
+      />
+      <div className="flex items-center gap-1 shrink-0 pt-1">
         {!preview && (
           <>
             <button
               type="button"
               onClick={() => notesFileRef.current?.click()}
-              className="hover:text-zinc-100"
+              className="text-xs text-zinc-500 hover:text-zinc-100 px-1"
               title="Insert image"
             >
-              image
+              img
             </button>
             <input ref={notesFileRef} type="file" accept="image/*" className="hidden" onChange={handleNotesFileSelect} />
           </>
         )}
-        <button onClick={() => setPreview(p => !p)} className="hover:text-zinc-100">
-          {preview ? "edit" : "preview"}
-          <kbd className="ml-1.5 text-[10px] text-zinc-600">Ctrl+E</kbd>
+        {activeSpace && (
+          <button disabled={savingTemplate} onClick={saveAsTemplate} className={`text-xs text-zinc-500 px-1 mr-1 ${savingTemplate ? "opacity-50" : "hover:text-zinc-100"}`} title="Save as Space Template">
+            {savingTemplate ? "saving..." : "save tmpl"}
+          </button>
+        )}
+        <button onClick={() => setNotesFontSize(s => Math.max(10, s - 1))} className="text-xs font-semibold text-zinc-500 hover:text-zinc-100 px-1" title="Decrease font size">
+          A-
+        </button>
+        <button onClick={() => setNotesFontSize(s => Math.min(32, s + 1))} className="text-xs font-semibold text-zinc-500 hover:text-zinc-100 px-1 mr-1" title="Increase font size">
+          A+
+        </button>
+        <button onClick={() => setPreview(p => !p)} className="text-zinc-400 hover:text-zinc-100 p-1" title={preview ? "edit notes (Ctrl+E)" : "preview notes (Ctrl+E)"}>
+          {preview ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          )}
         </button>
       </div>
     </div>
   );
+
+  const templatesContext = spaces
+    .flatMap(s => [
+      ...(s.note_template_md ? [`Template "Default" (from Space "${s.name}"):\n${s.note_template_md}`] : []),
+      ...(s.templates || []).map(t => `Template "${t.name}" (from Space "${s.name}"):\n${t.content}`)
+    ])
+    .join("\n\n");
+
+  const itemContext = [
+    `Item title: ${title}`,
+    `URL: ${item?.url || "N/A"}`,
+    `Channel/Author: ${item?.channel || "N/A"}`,
+    `Published: ${item?.published_at || "N/A"}`,
+    `Current tags: ${tags.join(", ") || "None"}`,
+    `Description: ${item?.description || "N/A"}`
+  ].join("\n");
+
+  const notesAiContext = `${itemContext}\nCurrent notes: ${notes}\n${templatesContext ? `Available Note Templates:\n${templatesContext}\n\n` : ""}Rewrite or append to the notes based on the user request. If the user asks to use a specific template (e.g., 'Anime template'), or if it naturally fits one of the Available Note Templates, YOU MUST strictly format your response to match it, extracting and filling in the relevant fields from the provided context (tags, description, URL, etc.). Respond ONLY with the new full notes markdown.`;
 
   // Used in fixed-height desktop layouts where the notes fill remaining space.
   const notesPanelFill = (
     <div className="flex-1 min-h-0 flex flex-col">
       {notesHeader}
       {preview ? (
-        <div className="flex-1 overflow-auto bg-zinc-900 rounded p-3 border border-zinc-800">
+        <div className="flex-1 overflow-auto bg-zinc-900 rounded p-3 border border-zinc-800" style={{ fontSize: `${notesFontSize}px` }}>
           <MarkdownRenderer>{notes || "_no notes_"}</MarkdownRenderer>
         </div>
       ) : (
@@ -485,19 +515,27 @@ export default function ItemDetail() {
           onPaste={handleNotesPaste}
           onSelect={e => { notesCursor.current = e.currentTarget.selectionStart; }}
           onKeyUp={e => { notesCursor.current = e.currentTarget.selectionStart; }}
-          className="flex-1 resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm"
+          className="flex-1 resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono"
+          style={{ fontSize: `${notesFontSize}px` }}
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
       )}
+      <div className="px-4 pb-4 mt-2">
+        <AiInput 
+          placeholder="Ask AI to write notes... (type @ for template)" 
+          context={notesAiContext}
+          templates={activeSpace?.templates}
+          onResponse={res => setNotes(res)} 
+        />
+      </div>
     </div>
   );
-
   // Used in scrollable layouts (mobile + desktop split right column).
   const notesPanel = (
     <div className="flex flex-col">
       {notesHeader}
       {preview ? (
-        <div className="bg-zinc-900 rounded p-3 border border-zinc-800 min-h-[8rem]">
+        <div className="bg-zinc-900 rounded p-3 border border-zinc-800 min-h-[8rem]" style={{ fontSize: `${notesFontSize}px` }}>
           <MarkdownRenderer>{notes || "_no notes_"}</MarkdownRenderer>
         </div>
       ) : (
@@ -508,62 +546,37 @@ export default function ItemDetail() {
           onPaste={handleNotesPaste}
           onSelect={e => { notesCursor.current = e.currentTarget.selectionStart; }}
           onKeyUp={e => { notesCursor.current = e.currentTarget.selectionStart; }}
-          className="w-full resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono text-sm min-h-[12rem]"
+          className="w-full resize-none bg-zinc-900 rounded p-3 border border-zinc-800 font-mono min-h-[12rem]"
+          style={{ fontSize: `${notesFontSize}px` }}
           placeholder="What did you think? Key takeaways. Timestamps. Anything searchable."
         />
       )}
+      <div className="mt-2">
+        <AiInput 
+          placeholder="Ask AI to write notes... (type @ for template)" 
+          context={notesAiContext}
+          templates={activeSpace?.templates}
+          onResponse={res => setNotes(res)} 
+        />
+      </div>
     </div>
   );
 
   const fields = (
     <>
-      <input
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        className="bg-transparent text-2xl font-semibold outline-none border-b border-transparent focus:border-zinc-700"
-      />
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-xs text-zinc-400">tags</label>
-          <button
-            type="button"
-            onClick={() => { setCopyOpen(o => !o); setCopyQuery(""); setCopyResults([]); }}
-            className="text-xs text-zinc-500 hover:text-zinc-300"
-          >
-            copy from...
-          </button>
         </div>
-        {copyOpen && (
-          <div className="relative mb-1.5">
-            <input
-              autoFocus
-              value={copyQuery}
-              onChange={e => setCopyQuery(e.target.value)}
-              placeholder="search by title..."
-              className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-sm outline-none"
-            />
-            {copyResults.length > 0 && (
-              <ul className="absolute z-10 mt-1 w-full bg-zinc-900 border border-zinc-800 rounded shadow-lg">
-                {copyResults.map(r => (
-                  <li
-                    key={r.id}
-                    className="px-2 py-1.5 text-sm hover:bg-zinc-800 cursor-pointer"
-                    onPointerDown={() => {
-                      setTags(prev => [...new Set([...prev, ...r.tags.map(t => t.name)])]);
-                      setCopyOpen(false);
-                      setCopyQuery("");
-                      setCopyResults([]);
-                    }}
-                  >
-                    <span className="text-zinc-200 truncate block">{r.title}</span>
-                    <span className="text-zinc-500 text-xs">{r.tags.map(t => t.name).join(", ")}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
         <TagInput value={tags} onChange={setTags} allowedNamespaces={activeSpace?.namespaces} />
+        <AiInput 
+          placeholder="Ask AI for tags..." 
+          context={`Item title: ${title}\nDescription: ${item?.description}\nCurrent tags on this item: ${tags.join(", ")}\n\nExisting tags in this space context: ${(activeSpace?.namespaces?.length ? allTags.filter(t => activeSpace.namespaces!.some(ns => t.name.startsWith(ns + ":"))) : allTags).map(t => t.name).join(", ")}\n\n${activeSpace?.namespaces?.length ? `Available tag scopes: ${activeSpace.namespaces.join(", ")}. EVERY SINGLE TAG YOU SUGGEST MUST HAVE A NAMESPACE PREFIX (e.g., 'genre:romance' instead of 'romance'). DO NOT suggest any tag without a colon (':'). If the 'acg:' scope is available, use it specifically for Anime, Comic, and Game related tropes, themes, or elements (e.g., 'acg:tsundere', 'acg:mecha', 'acg:isekai', 'acg:war').\n` : ""}Suggest comma-separated tags based on the user request. Prefer reusing "Existing tags in this space context" if they fit, but you CAN create new ones following the same namespacing idea. EVERY TAG MUST HAVE A NAMESPACE (e.g., 'type:video'). DO NOT provide bare tags. Respond ONLY with comma-separated tags.`}
+          onResponse={res => {
+            const newTags = res.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
+            setTags(prev => Array.from(new Set([...prev, ...newTags])));
+          }} 
+        />
       </div>
       {item.kind !== "note" && (
         <div>
@@ -602,92 +615,6 @@ export default function ItemDetail() {
           </div>
         </div>
       )}
-      {isSerialized(tags) && (
-        <div>
-          <label className="text-xs text-zinc-400 mb-1 block">AniList id</label>
-          {anilistId != null && !editingAnilist ? (
-            // Once an id is set, show it as the link itself; "edit" reopens the input.
-            <div className="flex items-center gap-2">
-              <a
-                href={anilistUrl(anilistId, tags)}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-blue-400 hover:underline"
-              >
-                #{anilistId} ↗
-              </a>
-              <button type="button" onClick={() => setEditingAnilist(true)} className="text-xs text-zinc-500 hover:text-zinc-300">edit</button>
-              <button type="button" onClick={() => { setAnilistId(null); setEditingAnilist(false); }} className="text-xs text-zinc-600 hover:text-red-400">clear</button>
-            </div>
-          ) : (
-            <input
-              type="number"
-              min={0}
-              autoFocus={editingAnilist}
-              value={anilistId ?? ""}
-              onFocus={() => setEditingAnilist(true)}
-              onChange={e => {
-                const v = e.target.value.trim();
-                setAnilistId(v === "" ? null : Math.max(0, Math.floor(Number(v) || 0)));
-              }}
-              onBlur={() => setEditingAnilist(false)}
-              onKeyDown={e => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
-              placeholder="e.g. 154587"
-              className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm"
-            />
-          )}
-        </div>
-      )}
-      <div>
-        <label className="text-xs text-zinc-400 mb-1 block">related links</label>
-        <div className="space-y-1">
-          {relatedLinks.map((lnk, i) => (
-            editingLinkIdx === i ? (
-              <div key={i} className="flex items-center gap-1.5">
-                <input
-                  autoFocus
-                  value={lnk.label}
-                  onChange={e => updateLink(i, "label", e.target.value)}
-                  placeholder="label"
-                  className="w-24 shrink-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm"
-                />
-                <input
-                  value={lnk.url}
-                  onChange={e => updateLink(i, "url", e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") setEditingLinkIdx(null); }}
-                  placeholder="https://…"
-                  className="flex-1 min-w-0 bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-sm"
-                />
-                <button type="button" onClick={() => setEditingLinkIdx(null)} className="text-xs text-zinc-400 hover:text-zinc-100">done</button>
-                <button type="button" onClick={() => removeLink(i)} className="text-zinc-600 hover:text-red-400 text-sm" title="remove">✕</button>
-              </div>
-            ) : (
-              <div key={i} className="flex items-center gap-2 group/link">
-                <a
-                  href={lnk.url || undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 flex-1 min-w-0 text-sm text-blue-400 hover:underline"
-                >
-                  {lnk.url && (
-                    <img
-                      src={faviconUrl(lnk.url)}
-                      alt=""
-                      className="w-4 h-4 rounded shrink-0"
-                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
-                    />
-                  )}
-                  <span className="truncate">{linkLabel(lnk)}</span>
-                  <span className="text-zinc-500">↗</span>
-                </a>
-                <button type="button" onClick={() => setEditingLinkIdx(i)} className="text-xs text-zinc-500 hover:text-zinc-300 opacity-0 group-hover/link:opacity-100">edit</button>
-                <button type="button" onClick={() => removeLink(i)} className="text-zinc-600 hover:text-red-400 text-sm opacity-0 group-hover/link:opacity-100" title="remove">✕</button>
-              </div>
-            )
-          ))}
-        </div>
-        <button type="button" onClick={addLink} className="mt-1.5 text-xs text-zinc-400 hover:text-zinc-100">+ add link</button>
-      </div>
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-xs text-zinc-400">files</label>
@@ -741,20 +668,18 @@ export default function ItemDetail() {
     </>
   );
 
-  const topBar = (
+  const leftTopBar = (
+    <div className="flex items-center shrink-0">
+      <button onClick={() => nav(-1)} className="text-xs text-zinc-400 hover:text-zinc-100 px-2 py-1 -ml-2 rounded hover:bg-zinc-800">&lt; back</button>
+    </div>
+  );
+
+  const rightTopBar = (
     <div className="flex items-center gap-2 shrink-0">
-      <button onClick={() => nav(-1)} className="text-xs text-zinc-400 hover:text-zinc-100">back</button>
-      <span className={`ml-2 text-xs transition-opacity duration-500 ${saveStatus === "idle" ? "opacity-0" : "opacity-100"} ${saveStatus === "saved" ? "text-zinc-400" : "text-zinc-500"}`}>
+      <span className={`text-xs transition-opacity duration-500 ${saveStatus === "idle" ? "opacity-0" : "opacity-100"} ${saveStatus === "saved" ? "text-zinc-400" : "text-zinc-500"}`}>
         {saveStatus === "saving" ? "Saving..." : "Saved"}
       </span>
       <div className="ml-auto flex items-center gap-2">
-        <button
-          onClick={toggleLayout}
-          className="hidden md:block text-xs text-zinc-500 hover:text-zinc-300 px-2 py-1 rounded hover:bg-zinc-800"
-          title={layout === "split" ? "3-column layout" : "2-column layout"}
-        >
-          {layout === "split" ? "☰ focus" : "⬒ split"}
-        </button>
         <div ref={menuRef} className="relative">
           <button
             onClick={() => setMenuOpen(o => !o)}
@@ -779,12 +704,6 @@ export default function ItemDetail() {
                   {refresh.isPending ? "Refreshing..." : "Re-fetch metadata"}
                 </button>
               )}
-              <button
-                className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-800 hidden md:block"
-                onMouseDown={saveLayoutAsDefault}
-              >
-                {layoutSaved ? "✓ Saved!" : "Save layout as default"}
-              </button>
               <button
                 className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-zinc-800 disabled:opacity-50"
                 onMouseDown={() => del.mutate()}
@@ -842,28 +761,29 @@ export default function ItemDetail() {
     <>
       {/* ── Mobile: single scrollable column ─────────────────────── */}
       <div className="md:hidden flex flex-col">
-        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800 px-4 py-2 shrink-0">
-          {topBar}
+        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800 px-4 py-2 shrink-0 flex items-center justify-between">
+          {leftTopBar}
+          {rightTopBar}
         </div>
         <div className="aspect-video shrink-0">{media}</div>
-        <div className="px-4 py-2 border-b border-zinc-800">{meta}</div>
+        {hasMeta && <div className="px-4 py-2 border-b border-zinc-800">{meta}</div>}
         <div className="flex flex-col gap-4 p-4 pb-10">
-          {fields}
           {notesPanel}
+          {fields}
         </div>
       </div>
 
       {/* ── Desktop: notes-focused 3-column layout ──────────────── */}
-      {layout === "notes" && (
-        <div
-          ref={containerRef}
-          className="hidden md:flex h-[calc(100vh-2.75rem)] overflow-hidden"
-        >
+      <div
+        ref={containerRef}
+        className="hidden md:flex h-full overflow-hidden"
+      >
           {/* Left column — image + meta */}
           <div
             className="flex flex-col gap-3 p-4 overflow-y-auto shrink-0"
             style={{ width: leftW }}
           >
+            {leftTopBar}
             <div className="aspect-video w-full shrink-0">{media}</div>
             {meta}
           </div>
@@ -882,9 +802,8 @@ export default function ItemDetail() {
             <div className="w-px h-8 bg-zinc-700 rounded-full" />
           </div>
 
-          {/* Center column — topBar + notes */}
+          {/* Center column — notes */}
           <div className="flex-1 min-w-0 flex flex-col gap-3 p-4 overflow-hidden">
-            {topBar}
             {notesPanelFill}
           </div>
 
@@ -907,25 +826,10 @@ export default function ItemDetail() {
             className="flex flex-col gap-3 p-4 overflow-y-auto shrink-0"
             style={{ width: rightW }}
           >
+            {rightTopBar}
             {fields}
           </div>
         </div>
-      )}
-
-      {/* ── Desktop: split layout (2-column, original) ────────────── */}
-      {layout === "split" && (
-        <div className="hidden md:grid md:grid-cols-[2fr_3fr] gap-6 p-4 h-[calc(100vh-2.75rem)] overflow-hidden">
-          <div className="flex flex-col gap-3 min-h-0">
-            <div className="flex-1 min-h-0">{media}</div>
-            {meta}
-          </div>
-          <div className="flex flex-col gap-3 min-h-0 overflow-y-auto pb-4">
-            {topBar}
-            {fields}
-            {notesPanel}
-          </div>
-        </div>
-      )}
 
       {historyPanel}
     </>

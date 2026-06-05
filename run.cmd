@@ -30,9 +30,6 @@ if not exist "%VPY%" (
     "%VPY%" -m pip install -e ".[dev]" || goto :err
 )
 
-set "URL=http://%YUMI_HOST%:8765"
-echo [yumi] Starting on %URL%
-start "" "%URL%"
 "%VPY%" -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 goto :eof
 

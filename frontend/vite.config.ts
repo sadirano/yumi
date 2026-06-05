@@ -13,5 +13,6 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "../backend/app/static"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
   },
 });
