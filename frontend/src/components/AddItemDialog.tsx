@@ -18,7 +18,8 @@ export default function AddItemDialog({ activeSpace, onClose }: Props) {
   const [filePath, setFilePath] = useState("");
   const [noteTitle, setNoteTitle] = useState("");
   const [noteBody, setNoteBody] = useState(activeSpace?.note_template_md || "");
-  const [tags, setTags] = useState<string[]>([]);
+  // Pre-fill the active space's required tags so a new item lands in that space.
+  const [tags, setTags] = useState<string[]>(activeSpace?.tags ?? []);
   const [status, setStatus] = useState<ItemStatus>("plan");
   const [dupId, setDupId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
