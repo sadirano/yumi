@@ -44,6 +44,9 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
   const [browseOpen, setBrowseOpen] = useState(false);
   const [browseFilter, setBrowseFilter] = useState("");
   const [copied, setCopied] = useState(false);
+  // Set when a commit is dropped because every part lacked a namespace, so we
+  // can tell the user why nothing was added instead of failing silently.
+  const [needsNamespace, setNeedsNamespace] = useState(false);
   const listRef = useRef<HTMLUListElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   // Tracks latest input value for the blur handler's setTimeout closure, so a
@@ -110,9 +113,19 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
       .split(",")
       .map(s => s.trim().toLowerCase().replace(/\s+/g, "-"))
       .filter(Boolean);
-    const valid = parts.filter(p => p.includes(":"));
-    if (parts.length > 0 && valid.length === 0) return; // Keep input if all invalid
-    if (!valid.length) return;
+    // Every tag must be namespaced (e.g. "genre:romance") with a non-empty
+    // namespace and value — ":x" and "genre:" are rejected. Drop invalid parts;
+    // if that leaves nothing, keep the typed input and surface a hint instead of
+    // silently clearing it.
+    const valid = parts.filter(p => {
+      const colon = p.indexOf(":");
+      return colon > 0 && colon < p.length - 1;
+    });
+    if (!valid.length) {
+      setNeedsNamespace(parts.length > 0);
+      return;
+    }
+    setNeedsNamespace(false);
     const next = [...value];
     for (const p of valid) if (!next.includes(p)) next.push(p);
     if (next.length !== value.length) onChange(next);
@@ -207,7 +220,8 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
           className="flex-1 min-w-32 bg-transparent outline-none text-sm"
           value={input}
           placeholder={placeholder ?? "add tag… (namespace:value)"}
-          onChange={e => setInput(e.target.value)}
+          onChange={e => { setInput(e.target.value); if (needsNamespace) setNeedsNamespace(false); }}
+          aria-describedby={needsNamespace ? "tags-namespace-hint" : undefined}
           onFocus={() => setFocused(true)}
           onBlur={() => setTimeout(() => { setFocused(false); commit(pendingInput.current); }, 150)}
           onKeyDown={handleKeyDown}
@@ -245,6 +259,12 @@ export default function TagInput({ value, onChange, placeholder, browsable = tru
           </button>
         )}
       </div>
+
+      {needsNamespace && (
+        <div id="tags-namespace-hint" className="mt-1 text-xs text-amber-400/80">
+          Tags need a namespace, e.g. <span className="font-mono">genre:value</span>
+        </div>
+      )}
 
       {browsable && browseOpen && (
         <div className="mt-1.5 bg-zinc-900 border border-zinc-800 rounded p-2">

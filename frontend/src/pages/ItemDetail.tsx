@@ -127,6 +127,13 @@ export default function ItemDetail() {
       }
     }
     function onUp() {
+      // Persist only on drag end — the effect re-runs on every width change, so
+      // leftW/rightW here are current. Avoids a localStorage write per pointermove.
+      if (dragging.current === "left") {
+        localStorage.setItem("yumi:defaultLeftW", String(leftW));
+      } else if (dragging.current === "right") {
+        localStorage.setItem("yumi:defaultRightW", String(rightW));
+      }
       dragging.current = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
