@@ -155,6 +155,13 @@ export default function ItemDetail() {
   const [thumbEdit, setThumbEdit] = useState(false);
   const [thumbInput, setThumbInput] = useState("");
 
+  const [sourceEdit, setSourceEdit] = useState(false);
+  const [sourceInput, setSourceInput] = useState("");
+
+  // AI suggestions held for review before they touch the saved item.
+  const [pendingTags, setPendingTags] = useState<string[]>([]);
+  const [pendingNotes, setPendingNotes] = useState<string | null>(null);
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [revisions, setRevisions] = useState<Revision[]>([]);
@@ -168,6 +175,9 @@ export default function ItemDetail() {
     setStatus(item.status);
     setProgress(item.progress);
     setTotal(item.total);
+    setPendingTags([]);
+    setPendingNotes(null);
+    setSourceEdit(false);
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
   }, [item?.id]);
@@ -277,6 +287,25 @@ export default function ItemDetail() {
     },
   });
 
+  const patchSource = useMutation({
+    mutationFn: (data: { url?: string | null; file_path?: string | null }) => api.patchItem(itemId, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["item", itemId] });
+      qc.invalidateQueries({ queryKey: ["items"] });
+      setSourceEdit(false);
+    },
+  });
+
+  // Apply a reviewed AI tag suggestion; the pending list never auto-saves.
+  function acceptPendingTag(t: string) {
+    setTags(prev => (prev.includes(t) ? prev : [...prev, t]));
+    setPendingTags(prev => prev.filter(x => x !== t));
+  }
+  function acceptAllPendingTags() {
+    setTags(prev => Array.from(new Set([...prev, ...pendingTags])));
+    setPendingTags([]);
+  }
+
   const { data: attachments = [], refetch: refetchAttachments } = useQuery({
     queryKey: ["attachments", itemId],
     queryFn: () => api.listAttachments(itemId),
@@ -348,43 +377,45 @@ export default function ItemDetail() {
   const media = (
     <div className="w-full h-full bg-zinc-900 rounded overflow-hidden flex items-center justify-center relative group/thumb">
       {thumbEdit ? (
-        <div className="absolute inset-0 bg-zinc-900/95 flex flex-col items-center justify-center p-4 gap-3 z-10">
-          {thumbInput && (
-            <img src={thumbInput} alt="preview" className="w-full max-h-32 object-contain rounded" onError={e => (e.currentTarget.style.display = "none")} />
-          )}
-          <input
-            autoFocus
-            value={thumbInput}
-            onChange={e => setThumbInput(e.target.value)}
-            onPaste={handleThumbPaste}
-            onKeyDown={e => {
-              if (e.key === "Enter") patchThumb.mutate(thumbInput.trim());
-              if (e.key === "Escape") setThumbEdit(false);
-            }}
-            placeholder="Paste image or URL…"
-            className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm outline-none focus:border-zinc-500"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => thumbFileRef.current?.click()}
-              className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
-            >
-              Choose file…
-            </button>
-            <input ref={thumbFileRef} type="file" accept="image/*" className="hidden" onChange={handleThumbFileSelect} />
-          </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => patchThumb.mutate(thumbInput.trim())}
-              disabled={patchThumb.isPending}
-              className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded disabled:opacity-50"
-            >
-              {patchThumb.isPending ? "Saving…" : "Save"}
-            </button>
-            <button onClick={() => setThumbEdit(false)} className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded">
-              Cancel
-            </button>
+        <div className="absolute inset-0 bg-zinc-900/95 flex flex-col overflow-y-auto p-4 z-10">
+          <div className="m-auto flex flex-col items-center gap-3 w-full">
+            {thumbInput && (
+              <img src={thumbInput} alt="preview" className="w-full max-h-32 object-contain rounded shrink-0" onError={e => (e.currentTarget.style.display = "none")} />
+            )}
+            <input
+              autoFocus
+              value={thumbInput}
+              onChange={e => setThumbInput(e.target.value)}
+              onPaste={handleThumbPaste}
+              onKeyDown={e => {
+                if (e.key === "Enter") patchThumb.mutate(thumbInput.trim());
+                if (e.key === "Escape") setThumbEdit(false);
+              }}
+              placeholder="Paste image or URL…"
+              className="w-full bg-zinc-800 border border-zinc-700 rounded px-3 py-2 text-sm outline-none focus:border-zinc-500 shrink-0"
+            />
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => thumbFileRef.current?.click()}
+                className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+              >
+                Choose file…
+              </button>
+              <input ref={thumbFileRef} type="file" accept="image/*" className="hidden" onChange={handleThumbFileSelect} />
+            </div>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={() => patchThumb.mutate(thumbInput.trim())}
+                disabled={patchThumb.isPending}
+                className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded disabled:opacity-50"
+              >
+                {patchThumb.isPending ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setThumbEdit(false)} className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded">
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       ) : (
@@ -532,7 +563,7 @@ export default function ItemDetail() {
           placeholder="Ask AI to write notes... (type @ for template)" 
           context={notesAiContext}
           templates={activeSpace?.templates}
-          onResponse={res => setNotes(res)} 
+          onResponse={res => setPendingNotes(res)} 
         />
       </div>
     </div>
@@ -563,14 +594,69 @@ export default function ItemDetail() {
           placeholder="Ask AI to write notes... (type @ for template)" 
           context={notesAiContext}
           templates={activeSpace?.templates}
-          onResponse={res => setNotes(res)} 
+          onResponse={res => setPendingNotes(res)} 
         />
       </div>
     </div>
   );
 
+  const isFileKind = item.kind === "file";
+  const sourceLabel = isFileKind ? "file path" : "url";
+  const sourceValue = isFileKind ? item.file_path : item.url;
+  const sourceField = item.kind !== "note" && (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs text-zinc-400">{sourceLabel}</label>
+        {!sourceEdit && (
+          <button
+            type="button"
+            onClick={() => { setSourceInput(sourceValue || ""); setSourceEdit(true); }}
+            className="text-xs text-zinc-500 hover:text-zinc-300"
+          >
+            edit
+          </button>
+        )}
+      </div>
+      {sourceEdit ? (
+        <div className="flex flex-col gap-2">
+          <input
+            autoFocus
+            value={sourceInput}
+            onChange={e => setSourceInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") patchSource.mutate(isFileKind ? { file_path: sourceInput.trim() || null } : { url: sourceInput.trim() || null });
+              if (e.key === "Escape") setSourceEdit(false);
+            }}
+            placeholder={isFileKind ? "C:\\path\\to\\file" : "https://…"}
+            className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm outline-none focus:border-zinc-600"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => patchSource.mutate(isFileKind ? { file_path: sourceInput.trim() || null } : { url: sourceInput.trim() || null })}
+              disabled={patchSource.isPending}
+              className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 rounded disabled:opacity-50"
+            >
+              {patchSource.isPending ? "Saving…" : "Save"}
+            </button>
+            <button onClick={() => setSourceEdit(false)} className="px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded">
+              Cancel
+            </button>
+          </div>
+          {!isFileKind && <span className="text-[10px] text-zinc-600">Use "Re-fetch metadata" in the ... menu to refresh title/thumbnail after changing the URL.</span>}
+        </div>
+      ) : sourceValue ? (
+        <a href={itemLink(item)!} target="_blank" rel="noreferrer" onClick={pingAccess} className="text-sm text-blue-400 hover:underline break-all line-clamp-2">
+          {sourceValue}
+        </a>
+      ) : (
+        <span className="text-sm text-zinc-600">not set</span>
+      )}
+    </div>
+  );
+
   const fields = (
     <>
+      {sourceField}
       <div>
         <div className="flex items-center justify-between mb-1">
           <label className="text-xs text-zinc-400">tags</label>
@@ -581,9 +667,37 @@ export default function ItemDetail() {
           context={`Item title: ${title}\nDescription: ${item?.description}\nCurrent tags on this item: ${tags.join(", ")}\n\nExisting tags in this space context: ${(activeSpace?.namespaces?.length ? allTags.filter(t => activeSpace.namespaces!.some(ns => t.name.startsWith(ns + ":"))) : allTags).map(t => t.name).join(", ")}\n\n${activeSpace?.namespaces?.length ? `Available tag scopes: ${activeSpace.namespaces.join(", ")}. EVERY SINGLE TAG YOU SUGGEST MUST HAVE A NAMESPACE PREFIX (e.g., 'genre:romance' instead of 'romance'). DO NOT suggest any tag without a colon (':'). If the 'acg:' scope is available, use it specifically for Anime, Comic, and Game related tropes, themes, or elements (e.g., 'acg:tsundere', 'acg:mecha', 'acg:isekai', 'acg:war').\n` : ""}Suggest comma-separated tags based on the user request. Prefer reusing "Existing tags in this space context" if they fit, but you CAN create new ones following the same namespacing idea. EVERY TAG MUST HAVE A NAMESPACE (e.g., 'type:video'). DO NOT provide bare tags. Respond ONLY with comma-separated tags.`}
           onResponse={res => {
             const newTags = res.split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
-            setTags(prev => Array.from(new Set([...prev, ...newTags])));
-          }} 
+            setPendingTags(prev => Array.from(new Set([...prev, ...newTags])));
+          }}
         />
+        {pendingTags.length > 0 && (
+          <div className="mt-2 border border-zinc-700 rounded p-2 bg-zinc-900/50">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] uppercase text-zinc-500 font-bold">AI suggestions · click to add</span>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={acceptAllPendingTags} className="text-xs text-blue-400 hover:text-blue-300">add all</button>
+                <button onClick={() => setPendingTags([])} className="text-xs text-zinc-500 hover:text-zinc-300">dismiss</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {pendingTags.map(t => {
+                const already = tags.includes(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => acceptPendingTag(t)}
+                    disabled={already}
+                    title={already ? "already added" : "add tag"}
+                    className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${already ? "border-zinc-800 text-zinc-600 line-through cursor-default" : "border-blue-700 text-blue-300 hover:bg-blue-700/30"}`}
+                  >
+                    {already ? t : `+ ${t}`}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
       {item.kind !== "note" && (
         <div>
@@ -725,6 +839,31 @@ export default function ItemDetail() {
     </div>
   );
 
+  const notesReviewPanel = pendingNotes !== null && (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setPendingNotes(null)}>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 shrink-0">
+          <span className="text-sm font-medium">Review AI notes</span>
+          <button onClick={() => setPendingNotes(null)} className="text-zinc-500 hover:text-zinc-200">x</button>
+        </div>
+        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 gap-px bg-zinc-800 overflow-hidden">
+          <div className="bg-zinc-900 overflow-y-auto p-3 min-h-0">
+            <div className="text-[10px] uppercase text-zinc-500 font-bold mb-2">Current</div>
+            <MarkdownRenderer>{notes || "_no notes_"}</MarkdownRenderer>
+          </div>
+          <div className="bg-zinc-900 overflow-y-auto p-3 min-h-0">
+            <div className="text-[10px] uppercase text-zinc-500 font-bold mb-2">Proposed</div>
+            <MarkdownRenderer>{pendingNotes || "_empty_"}</MarkdownRenderer>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-zinc-800 shrink-0">
+          <button onClick={() => setPendingNotes(null)} className="px-3 py-1.5 text-sm bg-zinc-700 hover:bg-zinc-600 rounded">Discard</button>
+          <button onClick={() => { setNotes(pendingNotes); setPendingNotes(null); }} className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 rounded">Accept</button>
+        </div>
+      </div>
+    </div>
+  );
+
   const historyPanel = historyOpen && (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={() => setHistoryOpen(false)}>
       <div className="w-full md:w-80 bg-zinc-900 border-l border-zinc-800 h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
@@ -768,7 +907,7 @@ export default function ItemDetail() {
     <>
       {/* ── Mobile: single scrollable column ─────────────────────── */}
       <div className="md:hidden flex flex-col">
-        <div className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800 px-4 py-2 shrink-0 flex items-center justify-between">
+        <div className="sticky top-0 z-20 bg-zinc-950/95 backdrop-blur-sm border-b border-zinc-800 px-4 py-2 shrink-0 flex items-center justify-between">
           {leftTopBar}
           {rightTopBar}
         </div>
@@ -839,6 +978,7 @@ export default function ItemDetail() {
         </div>
 
       {historyPanel}
+      {notesReviewPanel}
     </>
   );
 }

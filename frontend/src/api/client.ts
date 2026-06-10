@@ -64,6 +64,8 @@ export interface ItemPatch {
   thumbnail_url?: string | null;
   progress?: number;
   total?: number | null;
+  url?: string | null;
+  file_path?: string | null;
 }
 
 export interface Template {
