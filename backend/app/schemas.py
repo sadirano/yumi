@@ -84,6 +84,21 @@ class TemplateOut(BaseModel):
     content: str
 
 
+class ResetRule(BaseModel):
+    """A scheduled status reset owned by a Space. Fires at `time` (local
+    wall-clock) every day, or weekly on `weekday` (0=Monday … 6=Sunday).
+    Items matching the Space predicate AND all of `tags` (empty = the whole
+    Space) that are in-progress/completed flip back to "plan". `last_run_at`
+    is server-stamped; clients can't rewind it to force a replay."""
+
+    id: str
+    frequency: Literal["daily", "weekly"] = "daily"
+    time: str = Field("21:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    weekday: int = Field(0, ge=0, le=6)
+    tags: list[str] = Field(default_factory=list)
+    last_run_at: Optional[str] = None
+
+
 class SpaceOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -95,6 +110,7 @@ class SpaceOut(BaseModel):
     labels: Optional[dict[str, str]] = None
     note_template_md: str = ""
     templates: list[TemplateOut] = Field(default_factory=list)
+    reset_rules: list[ResetRule] = Field(default_factory=list)
     created_at: str
 
 
@@ -105,6 +121,7 @@ class SpaceCreate(BaseModel):
     labels: Optional[dict[str, str]] = None
     note_template_md: str = ""
     templates: list[TemplateOut] = Field(default_factory=list)
+    reset_rules: list[ResetRule] = Field(default_factory=list)
 
 
 class SpacePatch(BaseModel):
@@ -114,6 +131,7 @@ class SpacePatch(BaseModel):
     labels: Optional[dict[str, str]] = None
     note_template_md: Optional[str] = None
     templates: Optional[list[TemplateOut]] = None
+    reset_rules: Optional[list[ResetRule]] = None
 
 
 class DuplicateError(BaseModel):

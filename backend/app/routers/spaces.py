@@ -8,7 +8,8 @@ from sqlalchemy.orm import Session
 
 from ..db import get_session
 from ..models import Space
-from ..schemas import SpaceCreate, SpaceOut, SpacePatch
+from ..resets import local_now_iso
+from ..schemas import ResetRule, SpaceCreate, SpaceOut, SpacePatch
 
 router = APIRouter(prefix="/api/spaces", tags=["spaces"])
 
@@ -22,8 +23,28 @@ def _out(s: Space) -> SpaceOut:
         labels=json.loads(s.labels_json) if s.labels_json else None,
         note_template_md=s.note_template_md,
         templates=json.loads(s.templates_json) if s.templates_json else [],
+        reset_rules=json.loads(s.reset_rules_json) if s.reset_rules_json else [],
         created_at=s.created_at,
     )
+
+
+def _reset_rules_json(rules: list[ResetRule], previous_json: str | None) -> str:
+    """Serialize incoming rules, keeping last_run_at server-authoritative:
+    a rule keeps its stored stamp, and a brand-new rule starts "as of now" so
+    it first fires at its next occurrence instead of replaying today's."""
+    try:
+        prev_stamps = {
+            r.get("id"): r.get("last_run_at")
+            for r in json.loads(previous_json or "[]")
+        }
+    except ValueError:
+        prev_stamps = {}
+    out = []
+    for r in rules:
+        d = r.model_dump()
+        d["last_run_at"] = prev_stamps.get(r.id) or local_now_iso()
+        out.append(d)
+    return json.dumps(out)
 
 
 @router.get("", response_model=list[SpaceOut])
@@ -40,6 +61,7 @@ def create_space(payload: SpaceCreate, db: Session = Depends(get_session)):
         labels_json=json.dumps(payload.labels) if payload.labels else None,
         note_template_md=payload.note_template_md,
         templates_json=json.dumps([t.model_dump() for t in payload.templates]),
+        reset_rules_json=_reset_rules_json(payload.reset_rules, None),
     )
     db.add(s)
     db.commit()
@@ -65,6 +87,8 @@ def update_space(space_id: int, payload: SpacePatch, db: Session = Depends(get_s
         s.note_template_md = payload.note_template_md
     if payload.templates is not None:
         s.templates_json = json.dumps([t.model_dump() for t in payload.templates])
+    if payload.reset_rules is not None:
+        s.reset_rules_json = _reset_rules_json(payload.reset_rules, s.reset_rules_json)
     db.commit()
     db.refresh(s)
     return _out(s)

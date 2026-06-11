@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -12,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from .backup import run_startup_backup
 from .crud import sweep_orphan_tags, sweep_orphan_uploads
 from .db import SessionLocal, init_db
+from .resets import apply_due_resets
 from .routers import items, saved_filters, spaces, tags, trash, ai
 from .settings import settings
 
@@ -45,7 +47,27 @@ async def lifespan(app: FastAPI):
         moved, purged = sweep_orphan_uploads(db)
     if moved or purged:
         print(f"[startup] uploads: {moved} orphan(s) moved to trash, {purged} purged after 30 days")
+    # Catch up on Space reset rules that fired while the app was closed, then
+    # keep a minute-sweep running so a "9 PM reset" lands at 9 PM, not next boot.
+    with SessionLocal() as db:
+        reset_count = apply_due_resets(db)
+    if reset_count:
+        print(f"[startup] reset {reset_count} item(s) to plan per space schedules")
+
+    async def _reset_sweep():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                with SessionLocal() as db:
+                    n = await asyncio.to_thread(apply_due_resets, db)
+                if n:
+                    print(f"[resets] reset {n} item(s) to plan per space schedules")
+            except Exception as exc:  # the sweep must never die
+                print(f"[resets] sweep failed: {exc}")
+
+    sweep_task = asyncio.create_task(_reset_sweep())
     yield
+    sweep_task.cancel()
 
 
 app = FastAPI(title="yumi", version="0.1.0", lifespan=lifespan)

@@ -74,6 +74,19 @@ export interface Template {
   content: string;
 }
 
+// A scheduled status reset owned by a Space: fires at `time` (local wall-clock)
+// daily, or weekly on `weekday` (0=Monday … 6=Sunday). Items matching the Space
+// AND all of `tags` (empty = whole Space) flip back to "plan". last_run_at is
+// server-stamped.
+export interface ResetRule {
+  id: string;
+  frequency: "daily" | "weekly";
+  time: string;
+  weekday: number;
+  tags: string[];
+  last_run_at?: string | null;
+}
+
 export interface Space {
   id: number;
   name: string;
@@ -83,6 +96,7 @@ export interface Space {
   labels: Record<string, string> | null;
   note_template_md: string;
   templates: Template[];
+  reset_rules: ResetRule[];
   created_at: string;
 }
 
@@ -184,9 +198,9 @@ export const api = {
   restoreRevision: (itemId: number, revId: number) => req<Item>("POST", `/items/${itemId}/revisions/${revId}/restore`),
 
   listSpaces: () => req<Space[]>("GET", `/spaces`),
-  createSpace: (name: string, namespaces: string[], tags: string[], labels?: Record<string, string> | null) =>
-    req<Space>("POST", `/spaces`, { name, namespaces, tags, labels }),
-  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[]; labels?: Record<string, string> | null; note_template_md?: string; templates?: Template[] }) =>
+  createSpace: (name: string, namespaces: string[], tags: string[], labels?: Record<string, string> | null, reset_rules?: ResetRule[]) =>
+    req<Space>("POST", `/spaces`, { name, namespaces, tags, labels, reset_rules }),
+  updateSpace: (id: number, data: { name?: string; namespaces?: string[]; tags?: string[]; labels?: Record<string, string> | null; note_template_md?: string; templates?: Template[]; reset_rules?: ResetRule[] }) =>
     req<Space>("PATCH", `/spaces/${id}`, data),
   deleteSpace: (id: number) => req<void>("DELETE", `/spaces/${id}`),
   askAI: (prompt: string) => req<{ response: string }>("POST", `/ai/ask`, { prompt }),

@@ -1,15 +1,18 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api, ItemStatus, Space, Template } from "../api/client";
+import { api, ItemStatus, ResetRule, Space, Template } from "../api/client";
 import { DEFAULT_LABELS } from "../lib/status";
 import TagInput from "./TagInput";
 
 // The 3 active states get custom per-Space labels; archived stays fixed.
 const LABELLED_STATUSES: ItemStatus[] = ["plan", "in-progress", "completed"];
 
+// Index matches ResetRule.weekday (0=Monday … 6=Sunday, like Python's weekday()).
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
 interface Props {
   space?: Space;
-  onSave: (name: string, namespaces: string[], tags: string[], labels: Record<string, string> | null, templates: Template[]) => void;
+  onSave: (name: string, namespaces: string[], tags: string[], labels: Record<string, string> | null, templates: Template[], resetRules: ResetRule[]) => void;
   onDelete?: () => void;
   onClose: () => void;
 }
@@ -20,6 +23,7 @@ export default function SpaceDialog({ space, onSave, onDelete, onClose }: Props)
   const [requiredTags, setRequiredTags] = useState<string[]>(space?.tags ?? []);
   const [labels, setLabels] = useState<Record<string, string>>(space?.labels ?? {});
   const [templates, setTemplates] = useState<Template[]>(space?.templates ?? []);
+  const [resetRules, setResetRules] = useState<ResetRule[]>(space?.reset_rules ?? []);
   const [nsInput, setNsInput] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -64,8 +68,21 @@ export default function SpaceDialog({ space, onSave, onDelete, onClose }: Props)
       const v = labels[s]?.trim();
       if (v) cleaned[s] = v;
     }
-    onSave(name.trim(), Array.from(selectedNs), requiredTags, cleaned, templates);
+    onSave(name.trim(), Array.from(selectedNs), requiredTags, cleaned, templates, resetRules);
   }
+
+  function patchRule(id: string, patch: Partial<ResetRule>) {
+    setResetRules(rules => rules.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  }
+
+  function addRule() {
+    setResetRules(rules => [
+      ...rules,
+      { id: crypto.randomUUID(), frequency: "daily", time: "21:00", weekday: 0, tags: [] },
+    ]);
+  }
+
+  const planLabel = labels["plan"]?.trim() || DEFAULT_LABELS.plan;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={onClose}>
@@ -163,6 +180,63 @@ export default function SpaceDialog({ space, onSave, onDelete, onClose }: Props)
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Scheduled resets */}
+        <div>
+          <label className="text-xs text-zinc-400 mb-1 block">Scheduled resets</label>
+          <p className="text-[10px] text-zinc-500 mb-2">
+            On schedule, items in this space flip back to <span className="font-mono">{planLabel}</span> (archived items are left alone) — e.g. a daily 21:00 reset for GW2 dailies. Scope a rule to specific tags, or leave the tags empty to reset the whole space.
+          </p>
+          {resetRules.length > 0 && (
+            <div className="space-y-2 mb-2">
+              {resetRules.map(r => (
+                <div key={r.id} className="bg-zinc-800 border border-zinc-700 rounded p-2 flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={r.frequency}
+                      onChange={e => patchRule(r.id, { frequency: e.target.value as ResetRule["frequency"] })}
+                      className="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-xs outline-none"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                    </select>
+                    {r.frequency === "weekly" && (
+                      <select
+                        value={r.weekday}
+                        onChange={e => patchRule(r.id, { weekday: Number(e.target.value) })}
+                        className="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-xs outline-none"
+                      >
+                        {WEEKDAYS.map((d, i) => <option key={d} value={i}>{d}</option>)}
+                      </select>
+                    )}
+                    <span className="text-xs text-zinc-500">at</span>
+                    <input
+                      type="time"
+                      value={r.time}
+                      onChange={e => e.target.value && patchRule(r.id, { time: e.target.value })}
+                      className="bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-xs outline-none [color-scheme:dark]"
+                    />
+                    <button
+                      onClick={() => setResetRules(rules => rules.filter(x => x.id !== r.id))}
+                      className="ml-auto text-zinc-500 hover:text-red-400"
+                      title="Remove rule"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <TagInput
+                    value={r.tags}
+                    onChange={tags => patchRule(r.id, { tags })}
+                    placeholder="limit to tags… (empty = whole space)"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+          <button onClick={addRule} className="text-xs text-zinc-400 hover:text-zinc-100">
+            + Add reset rule
+          </button>
         </div>
 
         {/* Templates */}

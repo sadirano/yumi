@@ -6,7 +6,8 @@ import ItemDetail from "./pages/ItemDetail";
 import Trash from "./pages/Trash";
 import AddItemDialog from "./components/AddItemDialog";
 import SpaceDialog from "./components/SpaceDialog";
-import { api, Space, Template } from "./api/client";
+import TagInput from "./components/TagInput";
+import { api, ResetRule, Space, Template } from "./api/client";
 import { getSerializedTags, setSerializedTags } from "./lib/serialized";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -15,9 +16,9 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 // Edits the tags that mark content as serialized (gets an episode/chapter
 // counter). Persists locally; reloads so every card/detail re-reads the rule.
 function CounterTagsDialog({ onClose }: { onClose: () => void }) {
-  const [value, setValue] = useState(() => getSerializedTags().join(", "));
+  const [value, setValue] = useState<string[]>(() => getSerializedTags());
   function save() {
-    setSerializedTags(value.split(","));
+    setSerializedTags(value);
     onClose();
     window.location.reload();
   }
@@ -26,16 +27,9 @@ function CounterTagsDialog({ onClose }: { onClose: () => void }) {
       <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4 w-96" onClick={e => e.stopPropagation()}>
         <h2 className="text-sm font-medium mb-1">Counter tags</h2>
         <p className="text-xs text-zinc-500 mb-3">
-          Items carrying any of these tags get an episode/chapter counter. Comma-separated.
+          Items carrying any of these tags get an episode/chapter counter.
         </p>
-        <input
-          autoFocus
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") onClose(); }}
-          placeholder="source:anime, source:manga"
-          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-sm font-mono outline-none focus:border-zinc-500"
-        />
+        <TagInput value={value} onChange={setValue} placeholder="source:anime, source:manga…" />
         <div className="flex justify-end gap-2 mt-3">
           <button onClick={onClose} className="px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100">Cancel</button>
           <button onClick={save} className="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-500">Save</button>
@@ -169,8 +163,8 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
   const [editing, setEditing] = useState<Space | null>(null);
 
   const update = useMutation({
-    mutationFn: ({ id, name, namespaces, tags, labels, templates }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null, templates: Template[] }) =>
-      api.updateSpace(id, { name, namespaces, tags, labels, templates }),
+    mutationFn: ({ id, name, namespaces, tags, labels, templates, resetRules }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null, templates: Template[], resetRules: ResetRule[] }) =>
+      api.updateSpace(id, { name, namespaces, tags, labels, templates, reset_rules: resetRules }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
   });
 
@@ -205,7 +199,7 @@ function SpaceNavItems({ spaces }: { spaces: Space[] }) {
       {editing && (
         <SpaceDialog
           space={editing}
-          onSave={(name, namespaces, tags, labels, templates) => update.mutate({ id: editing.id, name, namespaces, tags, labels, templates })}
+          onSave={(name, namespaces, tags, labels, templates, resetRules) => update.mutate({ id: editing.id, name, namespaces, tags, labels, templates, resetRules })}
           onDelete={() => del.mutate(editing.id)}
           onClose={() => setEditing(null)}
         />
@@ -230,8 +224,8 @@ function MobileNav({
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const update = useMutation({
-    mutationFn: ({ id, name, namespaces, tags, labels, templates }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null, templates: Template[] }) =>
-      api.updateSpace(id, { name, namespaces, tags, labels, templates }),
+    mutationFn: ({ id, name, namespaces, tags, labels, templates, resetRules }: { id: number; name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null, templates: Template[], resetRules: ResetRule[] }) =>
+      api.updateSpace(id, { name, namespaces, tags, labels, templates, reset_rules: resetRules }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setEditing(null); },
   });
 
@@ -300,7 +294,7 @@ function MobileNav({
       {editing && (
         <SpaceDialog
           space={editing}
-          onSave={(name, namespaces, tags, labels, templates) => update.mutate({ id: editing.id, name, namespaces, tags, labels, templates })}
+          onSave={(name, namespaces, tags, labels, templates, resetRules) => update.mutate({ id: editing.id, name, namespaces, tags, labels, templates, resetRules })}
           onDelete={() => del.mutate(editing.id)}
           onClose={() => setEditing(null)}
         />
@@ -462,8 +456,8 @@ export default function App() {
   });
 
   const createSpace = useMutation({
-    mutationFn: ({ name, namespaces, tags, labels }: { name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null }) =>
-      api.createSpace(name, namespaces, tags, labels),
+    mutationFn: ({ name, namespaces, tags, labels, resetRules }: { name: string; namespaces: string[]; tags: string[]; labels: Record<string, string> | null; resetRules: ResetRule[] }) =>
+      api.createSpace(name, namespaces, tags, labels, resetRules),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["spaces"] }); setCreatingSpace(false); },
   });
 
@@ -626,7 +620,7 @@ export default function App() {
       {adding && <AddItemDialog activeSpace={activeSpace} onClose={() => setAdding(false)} />}
       {creatingSpace && (
         <SpaceDialog
-          onSave={(name, namespaces, tags, labels, templates) => createSpace.mutate({ name, namespaces, tags, labels })}
+          onSave={(name, namespaces, tags, labels, _templates, resetRules) => createSpace.mutate({ name, namespaces, tags, labels, resetRules })}
           onClose={() => setCreatingSpace(false)}
         />
       )}

@@ -90,6 +90,10 @@ class Space(Base):
     labels_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     note_template_md: Mapped[str] = mapped_column(Text, nullable=False, default="")
     templates_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # JSON list of scheduled reset rules: each fires daily (or weekly on a
+    # weekday) at a local wall-clock time and flips matching non-archived items
+    # back to "plan". Optional per-rule tags narrow the scope within the Space.
+    reset_rules_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
 
 

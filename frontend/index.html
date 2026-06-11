@@ -11,8 +11,9 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#09090b" />
     <!-- iOS standalone: Safari ignores the manifest's display mode and needs
-         these explicit meta tags. -->
-    <link rel="apple-touch-icon" href="/icon.svg" />
+         these explicit meta tags. apple-touch-icon must be a PNG — iOS does
+         not render SVG here and falls back to a page screenshot. -->
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="yumi" />

@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { api, Item, ItemQuery, ItemStatus } from "../api/client";
 import { NEXT_STATUS } from "../lib/status";
-import FilterSidebar from "../components/FilterSidebar";
+import FilterSidebar, { FilterIcon } from "../components/FilterSidebar";
 import ItemCard, { Layout } from "../components/ItemCard";
 
 function LayoutBtn({ active, title, onClick, children }: {
@@ -181,16 +181,16 @@ export default function Library() {
               </svg>
             </LayoutBtn>
             </div>
-            <div className="w-px h-4 bg-zinc-800" />
+            {/* Mobile-only: desktop toggles live at the right edge (rail / panel
+                header) so the button doesn't shift when the panel collapses. */}
+            <div className="w-px h-4 bg-zinc-800 md:hidden" />
             <button
-              className={`p-1.5 rounded transition-colors ${sidebarOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`}
+              className={`p-1.5 rounded transition-colors md:hidden ${sidebarOpen ? "text-zinc-100 bg-zinc-800" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"}`}
               onClick={() => setSidebarOpen(o => !o)}
               title="Toggle Filters"
               aria-label="Toggle filters"
             >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                <path d="M1 3.5h14M4 8h8M6.5 12.5h3"/>
-              </svg>
+              <FilterIcon />
             </button>
           </div>
         </div>
@@ -233,6 +233,21 @@ export default function Library() {
       )}
 
       <FilterSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} width={rightW} />
+
+      {/* Collapsed rail mirroring the left nav: keeps the filter toggle pinned
+          to the right edge so it doesn't jump when the panel collapses. */}
+      {!sidebarOpen && (
+        <aside className="hidden md:flex flex-col items-center w-12 shrink-0 border-l border-zinc-800 bg-zinc-950 py-2">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            title="Show filters"
+            aria-label="Show filters"
+            className="p-1.5 rounded text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 w-8 h-8 flex items-center justify-center"
+          >
+            <FilterIcon />
+          </button>
+        </aside>
+      )}
     </div>
   );
 }

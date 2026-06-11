@@ -82,6 +82,8 @@ _COLUMN_MIGRATIONS = [
     ("items", "last_accessed_at", "TEXT"),
     ("spaces", "labels_json", "TEXT"),
     ("spaces", "note_template_md", "TEXT NOT NULL DEFAULT ''"),
+    ("spaces", "templates_json", "TEXT NOT NULL DEFAULT '[]'"),
+    ("spaces", "reset_rules_json", "TEXT NOT NULL DEFAULT '[]'"),
 ]
 
 # Columns retired from the model and dropped from upgraded DBs. SQLite 3.35+

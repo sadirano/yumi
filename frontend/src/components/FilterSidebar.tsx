@@ -9,6 +9,14 @@ import AiInput from "./AiInput";
 
 const SORTS = ["recent", "random", "duration", "title"] as const;
 
+export function FilterIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M1 3.5h14M4 8h8M6.5 12.5h3"/>
+    </svg>
+  );
+}
+
 // Query params that describe a saved filter. Everything else in the URL
 // (space, filter, limit, offset) is positional context, not part of the filter.
 const FILTER_PARAM_KEYS = ["q", "tagExpr", "tags", "exclude_tags", "tag_op", "status_in", "sort"];
@@ -243,6 +251,19 @@ export default function FilterSidebar({ open = false, onClose, width }: { open?:
       <div className="flex items-center justify-between md:hidden -mt-1 mb-2">
         <span className="text-xs uppercase tracking-wide text-zinc-500">Filters</span>
         <button onClick={onClose} className="text-zinc-400 hover:text-zinc-100 p-1 -mr-1">✕</button>
+      </div>
+      {/* Desktop header: the toggle sits at the panel's right edge, the same
+          spot the collapsed rail's button occupies, so it never moves. */}
+      <div className="hidden md:flex items-center justify-between -mt-1 -mr-1 mb-2">
+        <span className="text-xs uppercase tracking-wide text-zinc-500">Filters</span>
+        <button
+          onClick={onClose}
+          title="Hide filters"
+          aria-label="Hide filters"
+          className="p-1.5 rounded text-zinc-100 bg-zinc-800 hover:bg-zinc-700 w-8 h-8 flex items-center justify-center"
+        >
+          <FilterIcon />
+        </button>
       </div>
       {spaceId != null && (
         <Section id="saved-filters" title="Saved filters">
