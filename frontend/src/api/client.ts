@@ -204,6 +204,11 @@ export const api = {
     req<Space>("PATCH", `/spaces/${id}`, data),
   deleteSpace: (id: number) => req<void>("DELETE", `/spaces/${id}`),
   askAI: (prompt: string) => req<{ response: string }>("POST", `/ai/ask`, { prompt }),
+
+  // Server-side app preferences shared across devices (e.g. counter-tags).
+  getSettings: () => req<Record<string, unknown>>("GET", `/settings`),
+  putSetting: (key: string, value: unknown) =>
+    req<{ key: string; value: unknown }>("PUT", `/settings/${encodeURIComponent(key)}`, { value }),
 };
 
 

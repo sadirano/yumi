@@ -97,6 +97,18 @@ class Space(Base):
     created_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso)
 
 
+class AppSetting(Base):
+    """Server-side app preferences shared across devices (e.g. counter-tags),
+    so a PWA on the phone and the desktop see the same configuration. One row
+    per key; values are arbitrary JSON."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value_json: Mapped[str] = mapped_column(Text, nullable=False, default="null")
+    updated_at: Mapped[str] = mapped_column(String(40), default=utcnow_iso, onupdate=utcnow_iso)
+
+
 class SpaceFilter(Base):
     """A named, Space-owned snapshot of the Library filter state. Membership is
     live: applying it rewrites the URL query params, which the item query engine

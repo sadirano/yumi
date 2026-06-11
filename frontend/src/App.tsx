@@ -8,7 +8,7 @@ import AddItemDialog from "./components/AddItemDialog";
 import SpaceDialog from "./components/SpaceDialog";
 import TagInput from "./components/TagInput";
 import { api, ResetRule, Space, Template } from "./api/client";
-import { getSerializedTags, setSerializedTags } from "./lib/serialized";
+import { getSerializedTags, saveSerializedTags, syncSerializedTagsFromServer } from "./lib/serialized";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   `block px-3 py-2 rounded text-sm ${isActive ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"}`;
@@ -17,8 +17,8 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 // counter). Persists locally; reloads so every card/detail re-reads the rule.
 function CounterTagsDialog({ onClose }: { onClose: () => void }) {
   const [value, setValue] = useState<string[]>(() => getSerializedTags());
-  function save() {
-    setSerializedTags(value);
+  async function save() {
+    await saveSerializedTags(value);
     onClose();
     window.location.reload();
   }
@@ -419,6 +419,13 @@ export default function App() {
   });
   const dragging = useRef<boolean>(false);
 
+  // Counter tags live server-side; pull them into the local cache on boot and
+  // reload once if another device changed them (cache==server after the sync,
+  // so the reloaded page is a no-op here — no loop).
+  useEffect(() => {
+    syncSerializedTagsFromServer().then(changed => { if (changed) window.location.reload(); });
+  }, []);
+
   useEffect(() => { localStorage.setItem("yumi:desktopNavOpen", String(desktopNavOpen)); }, [desktopNavOpen]);
   useEffect(() => { localStorage.setItem("yumi:leftW", String(leftW)); }, [leftW]);
   useEffect(() => { localStorage.setItem("yumi:autoCollapse", String(autoCollapse)); }, [autoCollapse]);
@@ -503,8 +510,13 @@ export default function App() {
         </div>
       </header>
 
+      {/* Collapsed rail: 52px = 10px gap + 32px button + 10px gap, so the
+          -ml-1.5 buttons land visually centered while their glyphs keep the
+          exact position they have in the expanded panel — toggling doesn't
+          shift them. pt-2 tops the buttons at 8px, level with the toolbar
+          and the filter rail. */}
       {!desktopNavOpen && (
-        <aside className="hidden md:flex flex-col w-[64px] shrink-0 border-r border-zinc-800 bg-zinc-950 p-4">
+        <aside className="hidden md:flex flex-col w-[52px] shrink-0 border-r border-zinc-800 bg-zinc-950 px-4 pt-2 pb-4">
           <div className="flex flex-col gap-4">
             <button
               onClick={() => setDesktopNavOpen(true)}
@@ -541,7 +553,7 @@ export default function App() {
 
       {desktopNavOpen && (
         <>
-          <aside style={{ width: leftW }} className="hidden md:flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 p-4">
+          <aside style={{ width: leftW }} className="hidden md:flex shrink-0 flex-col border-r border-zinc-800 bg-zinc-950 px-4 pt-2 pb-4">
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
                 <button
