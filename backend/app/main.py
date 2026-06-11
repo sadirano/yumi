@@ -65,9 +65,26 @@ async def lifespan(app: FastAPI):
             except Exception as exc:  # the sweep must never die
                 print(f"[resets] sweep failed: {exc}")
 
-    sweep_task = asyncio.create_task(_reset_sweep())
+    # Tags with zero live items (left behind by retagging/purges) are swept at
+    # startup above; this keeps a long-running instance tidy without a restart.
+    async def _orphan_tag_sweep():
+        while True:
+            await asyncio.sleep(3600)
+            try:
+                with SessionLocal() as db:
+                    n = await asyncio.to_thread(sweep_orphan_tags, db)
+                if n:
+                    print(f"[tags] swept {n} unused tag(s)")
+            except Exception as exc:
+                print(f"[tags] sweep failed: {exc}")
+
+    sweep_tasks = [
+        asyncio.create_task(_reset_sweep()),
+        asyncio.create_task(_orphan_tag_sweep()),
+    ]
     yield
-    sweep_task.cancel()
+    for task in sweep_tasks:
+        task.cancel()
 
 
 app = FastAPI(title="yumi", version="0.1.0", lifespan=lifespan)
