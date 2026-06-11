@@ -318,10 +318,13 @@ function SettingsMenu({ canInstall, install, onOpenTags, collapsed = false, auto
   }, [open]);
 
   return (
-    <div ref={ref} className="relative mt-auto pt-4 border-t border-zinc-800 flex flex-col">
+    // Collapsed: -mx-1.5 widens the wrapper to the same 32px column the rail
+    // buttons occupy, so the divider and the gear button (fixed w-8, never
+    // w-full — the rail's content box is narrower than 32px) line up with them.
+    <div ref={ref} className={`relative mt-auto pt-4 border-t border-zinc-800 flex flex-col ${collapsed ? "-mx-1.5" : ""}`}>
       <button
         onClick={() => setOpen(o => !o)}
-        className={`w-full flex items-center ${collapsed ? "justify-center p-1.5 w-8 h-8 mx-auto" : "gap-2 px-3 py-2"} rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"}`}
+        className={`flex items-center ${collapsed ? "justify-center p-1.5 w-8 h-8" : "w-full gap-2 px-3 py-2"} rounded text-sm ${open ? "bg-zinc-800 text-zinc-100" : "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors"}`}
         title="Settings"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
