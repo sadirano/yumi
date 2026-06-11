@@ -1,7 +1,7 @@
 {
   "name": "yumi",
   "short_name": "yumi",
-  "description": "Personal anime/media library tracker",
+  "description": "Personal library & tracker — media backlogs, recurring tasks, and notes organized into tag-defined spaces",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
