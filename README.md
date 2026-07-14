@@ -74,6 +74,35 @@ is one SQLite file.
 - **Backend:** Python 3.11+ · FastAPI · SQLAlchemy 2 · SQLite (FTS5) · yt-dlp · httpx · selectolax
 - **Frontend:** React 19 · Vite · TypeScript · Tailwind v4 · TanStack Query · React Router
 
+## Self-hosting publicly, for free
+
+yumi has no auth of its own, but you can still run it on the public internet
+safely — the reference deployment costs $0/month and puts a Google login in
+front of it without touching the app:
+
+```
+you ──HTTPS──▶ Cloudflare edge ──[Access: Google login, your email only]
+                     │
+             tunnel (outbound-only)
+                     │
+             cloudflared ──▶ yumi on 127.0.0.1:8765
+```
+
+- **Server:** Oracle Cloud Always Free VM (even the 1 GB Micro shape is
+  plenty) running yumi under systemd, bound to localhost. No open web ports —
+  `cloudflared` dials *out* to Cloudflare.
+- **Auth:** Cloudflare Access (free tier) with Google as the identity
+  provider and an allowlist of exactly one email: yours. Unauthenticated
+  requests never reach the server.
+- **Durability:** daily SQLite snapshots + `rclone` copy to Google Drive, so
+  even a reclaimed free VM is a ten-minute redeploy.
+
+You need a domain on Cloudflare (free plan) and a Google account. The full
+step-by-step walkthrough — including the footguns we hit so you don't have
+to — is in [deploy/DEPLOY-ORACLE.md](deploy/DEPLOY-ORACLE.md). Prefer to keep
+it off the internet entirely? The tailnet-only home-server setup is
+[deploy/DEPLOY.md](deploy/DEPLOY.md).
+
 ## Quick start (Windows)
 
 ```powershell
