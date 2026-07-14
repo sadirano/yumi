@@ -131,6 +131,17 @@ scp -r <home-server>:.local/share/sadirano-data/yumi/uploads        sadirano@<ip
 Migrations self-apply on first boot; a pre-migration snapshot is taken
 automatically.
 
+> **If yumi already ran on the target machine**, stop it and delete *all three*
+> DB files — `favorites.sqlite`, `favorites.sqlite-wal`, `favorites.sqlite-shm`
+> — before copying the new one in. A stale `-wal` sidecar next to a swapped-in
+> DB gets "recovered" over it on the next start, silently resetting the library
+> to the old (empty) state.
+
+Don't forget `backend/.env` (AI provider keys, `YUMI_*` overrides): it is
+gitignored, so it travels with neither the clone nor the DB. Copy it from the
+old machine into `~/projects/yumi/backend/.env`, `chmod 600` it, and restart
+yumi. Skipping this only disables the AI features — everything else works.
+
 ## 4. (sudo) systemd: run the app + daily backup
 
 Same units as the home-server deploy — the paths match because the user is

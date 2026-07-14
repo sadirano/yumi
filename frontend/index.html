@@ -7,8 +7,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>yumi</title>
     <!-- Installable, full-screen PWA (no offline/service-worker). Install needs
-         an HTTPS secure context, which `tailscale serve` provides. -->
-    <link rel="manifest" href="/manifest.json" />
+         an HTTPS secure context (`tailscale serve` or the Cloudflare edge).
+         use-credentials: behind an auth gate (Cloudflare Access) the manifest
+         is otherwise fetched cookie-less, gets bounced to the login page, and
+         the PWA installs with a generic icon. Harmless without a gate. -->
+    <link rel="manifest" href="/manifest.json" crossorigin="use-credentials" />
     <meta name="theme-color" content="#09090b" />
     <!-- iOS standalone: Safari ignores the manifest's display mode and needs
          these explicit meta tags. apple-touch-icon must be a PNG — iOS does
