@@ -18,8 +18,10 @@ In real use a single library tracks, side by side:
   namespaces + required tags, so new domains need no schema changes.
 
 Single-user, no auth, SQLite under the hood, FastAPI + React on top. Runs
-locally on `127.0.0.1:8765`, or tailnet-only on a home server as an
-installable full-screen PWA (see [deploy/DEPLOY.md](deploy/DEPLOY.md)).
+locally on `127.0.0.1:8765`, tailnet-only on a home server as an installable
+full-screen PWA (see [deploy/DEPLOY.md](deploy/DEPLOY.md)), or on a free
+Oracle Cloud VM behind a Google login via Cloudflare Access
+(see [deploy/DEPLOY-ORACLE.md](deploy/DEPLOY-ORACLE.md)).
 
 ## What it can do
 
