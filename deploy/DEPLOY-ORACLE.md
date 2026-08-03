@@ -264,3 +264,24 @@ sudo systemctl restart yumi
 - **Tunnel token = full access to the hostname.** Treat the cloudflared
   install command/token like a password; regenerate it from the dashboard if
   it ever leaks.
+- **YouTube blocks this datacenter IP.** yt-dlp on the VM mostly fails with
+  "Sign in to confirm you're not a bot" — only very heavily cached videos get
+  through, while the same yt-dlp on a home connection resolves every one. This
+  is Oracle's IP range, not a yumi bug and not a stale yt-dlp. Two partial
+  mitigations, neither sufficient alone:
+  - Install deno so yt-dlp has a JS runtime (removes the "No supported
+    JavaScript runtime" warning and its weaker extraction path):
+    ```bash
+    mkdir -p ~/.deno/bin
+    curl -fsSL -o /tmp/deno.zip https://github.com/denoland/deno/releases/latest/download/deno-x86_64-unknown-linux-gnu.zip
+    ~/projects/yumi/.venv/bin/python -m zipfile -e /tmp/deno.zip ~/.deno/bin/   # no unzip on the box
+    chmod +x ~/.deno/bin/deno && rm /tmp/deno.zip
+    ```
+    systemd does not inherit it — the `Environment=PATH=` line in
+    `yumi.service` is what makes deno visible to the app.
+  - YouTube's public **oEmbed** endpoint is *not* IP-blocked and returns title,
+    channel and thumbnail with no auth. It has no duration/date/description,
+    but it is a viable fallback when yt-dlp is challenged.
+- **Enrichment failures are logged.** `app.enrich` logs the real reason at
+  WARNING (bot challenge, dead video, missing binary). `journalctl -u yumi -f`
+  — previously these were swallowed and every failure looked identical.

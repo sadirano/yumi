@@ -7,6 +7,10 @@ Wants=network-online.target
 Type=simple
 User=sadirano
 WorkingDirectory=/home/sadirano/projects/yumi/backend
+# yt-dlp needs a JS runtime (deno) for YouTube extraction; without one it warns
+# "No supported JavaScript runtime could be found" and falls back to a weaker
+# path. deno lives in the app user's home, which is not on systemd's default PATH.
+Environment=PATH=/home/sadirano/.deno/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Bind localhost only: the tailnet reaches it via `tailscale serve`, never directly.
 ExecStart=/home/sadirano/projects/yumi/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8765
 Restart=always
