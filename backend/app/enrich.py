@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import ipaddress
 import json
+import logging
 import os
 import re
 import shutil
@@ -18,6 +19,8 @@ import httpx
 from selectolax.parser import HTMLParser
 
 from .settings import settings
+
+log = logging.getLogger(__name__)
 
 _MAX_REDIRECTS = 5
 
@@ -123,6 +126,7 @@ def _ytdlp_via_exe(url: str) -> dict | None:
     """
     exe = _ytdlp_exe()
     if not exe:
+        log.warning("yt-dlp exe not found (set YUMI_YTDLP_EXE or put yt-dlp on PATH)")
         return None
     cmd = [
         exe, "-J", "--skip-download", "--no-playlist", "--no-warnings",
@@ -138,20 +142,29 @@ def _ytdlp_via_exe(url: str) -> dict | None:
             timeout=settings.enrichment_timeout_sec + 5,
             creationflags=creationflags,
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.warning(f"yt-dlp exe failed to run for {url}: {exc}")
         return None
     if proc.returncode != 0 or not proc.stdout.strip():
+        # yt-dlp puts the actual reason on stderr ("Sign in to confirm you're not
+        # a bot", "Video unavailable", ...); without it a failure is unreadable.
+        log.warning(
+            f"yt-dlp exe returned {proc.returncode} for {url}: "
+            f"{(proc.stderr or '').strip()[:500]}"
+        )
         return None
     try:
         return json.loads(proc.stdout)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as exc:
+        log.warning(f"yt-dlp exe emitted unparseable JSON for {url}: {exc}")
         return None
 
 
 def _ytdlp_via_lib(url: str) -> dict | None:
     try:
         from yt_dlp import YoutubeDL
-    except Exception:
+    except Exception as exc:
+        log.warning(f"yt-dlp library unavailable: {exc}")
         return None
     opts = {
         "quiet": True,
@@ -164,7 +177,8 @@ def _ytdlp_via_lib(url: str) -> dict | None:
     try:
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=False)
-    except Exception:
+    except Exception as exc:
+        log.warning(f"yt-dlp library failed for {url}: {exc}")
         return None
 
 
@@ -185,6 +199,7 @@ async def enrich_youtube(url: str) -> Enrichment:
     loop = asyncio.get_running_loop()
     info = await loop.run_in_executor(None, _ytdlp_metadata, url)
     if not info:
+        log.warning(f"youtube enrichment produced nothing for {url}; item marked needs_enrichment")
         return Enrichment(kind="youtube", canonical_url=url, needs_enrichment=True)
 
     thumb = info.get("thumbnail")
@@ -256,8 +271,9 @@ async def enrich_generic_url(url: str) -> Enrichment:
                             thumbnail_url=thumb,
                             canonical_url=url,
                         )
-        except Exception:
-            pass
+        except Exception as exc:
+            # Fall through to the generic og:-tag scrape below.
+            log.warning(f"anilist lookup failed for {url}: {type(exc).__name__}: {exc}")
 
     try:
         # Follow redirects manually so every hop is re-validated against the
@@ -279,7 +295,8 @@ async def enrich_generic_url(url: str) -> Enrichment:
                 break
             else:
                 raise UnsafeURLError("too many redirects")
-    except Exception:
+    except Exception as exc:
+        log.warning(f"url enrichment failed for {url}: {type(exc).__name__}: {exc}")
         return Enrichment(kind="url", canonical_url=url, needs_enrichment=True)
 
     def meta(prop: str) -> str:
