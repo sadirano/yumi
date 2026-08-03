@@ -258,3 +258,91 @@ def test_tag_autocomplete(client):
     r = client.get("/api/tags", params={"prefix": "lang:r"})
     names = [t["name"] for t in r.json()]
     assert set(names) == {"lang:react", "lang:rust"}
+
+
+def _partial_youtube(client):
+    """An item enriched only as far as oEmbed gets: title + channel, no more.
+
+    That is what a host YouTube refuses (an Oracle box, say) ends up with, and
+    the state the manual-metadata editor exists to repair.
+    """
+    item = client.post("/api/items", json={"url": "https://youtu.be/partial1"}).json()
+    r = client.patch(f"/api/items/{item['id']}", json={
+        "duration_sec": None,
+        "published_at": None,
+        "needs_enrichment": True,
+    })
+    assert r.status_code == 200
+    assert r.json()["needs_enrichment"] is True
+    return r.json()
+
+
+def test_manual_metadata_clears_needs_enrichment(client):
+    item = _partial_youtube(client)
+
+    r = client.patch(f"/api/items/{item['id']}", json={
+        "channel": "Hand Typed Channel",
+        "duration_sec": 754,
+        "published_at": "2024-03-09",
+        "description": "filled in by hand",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["channel"] == "Hand Typed Channel"
+    assert body["duration_sec"] == 754
+    assert body["published_at"] == "2024-03-09"
+    # Nothing the enricher would have filled is missing now -> banner retires.
+    assert body["needs_enrichment"] is False
+
+
+def test_partial_manual_metadata_keeps_flag(client):
+    item = _partial_youtube(client)
+
+    r = client.patch(f"/api/items/{item['id']}", json={"duration_sec": 754})
+    assert r.status_code == 200
+    assert r.json()["needs_enrichment"] is True
+
+
+def test_needs_enrichment_can_be_dismissed(client):
+    item = _partial_youtube(client)
+
+    r = client.patch(f"/api/items/{item['id']}", json={"needs_enrichment": False})
+    assert r.status_code == 200
+    assert r.json()["needs_enrichment"] is False
+    # Dismissal sticks across unrelated edits.
+    r2 = client.patch(f"/api/items/{item['id']}", json={"notes_md": "still dismissed"})
+    assert r2.json()["needs_enrichment"] is False
+
+
+def test_published_at_must_be_a_date(client):
+    item = client.post("/api/items", json={"url": "https://youtu.be/baddate"}).json()
+    r = client.patch(f"/api/items/{item['id']}", json={"published_at": "sometime in 2024"})
+    assert r.status_code == 422
+
+
+def test_refresh_keeps_hand_filled_metadata_unflagged(client, monkeypatch):
+    """A re-fetch that comes back partial must not re-raise the banner over
+    fields the user already filled by hand."""
+    from app import enrich
+    from app.routers import items as items_router
+
+    item = _partial_youtube(client)
+    client.patch(f"/api/items/{item['id']}", json={
+        "channel": "Hand Typed Channel",
+        "duration_sec": 754,
+        "published_at": "2024-03-09",
+    })
+
+    async def partial_fetch(url):
+        return enrich.Enrichment(
+            kind="youtube", title="oEmbed Title", channel="oEmbed Channel",
+            canonical_url=url, needs_enrichment=True,
+        )
+    monkeypatch.setattr(items_router, "enrich_url", partial_fetch)
+
+    r = client.post(f"/api/items/{item['id']}/refresh")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["duration_sec"] == 754
+    assert body["published_at"] == "2024-03-09"
+    assert body["needs_enrichment"] is False

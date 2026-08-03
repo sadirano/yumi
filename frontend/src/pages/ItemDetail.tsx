@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useMemo } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import MarkdownRenderer from "../components/MarkdownRenderer";
-import { api, ItemStatus, Revision, Space, Template, itemLink } from "../api/client";
+import { api, ItemPatch, ItemStatus, Revision, Space, Template, fmtDuration, itemLink, parseDuration } from "../api/client";
 import { isSerialized } from "../lib/serialized";
 import { DEFAULT_LABELS, STATUSES } from "../lib/status";
 import TagInput from "../components/TagInput";
@@ -158,6 +158,15 @@ export default function ItemDetail() {
   const [sourceEdit, setSourceEdit] = useState(false);
   const [sourceInput, setSourceInput] = useState("");
 
+  // Hand-filled enricher metadata, for items the enricher can't describe
+  // (YouTube refuses the server's IP, a page carries no og: tags).
+  const [metaEdit, setMetaEdit] = useState(false);
+  const [metaChannel, setMetaChannel] = useState("");
+  const [metaDuration, setMetaDuration] = useState("");
+  const [metaPublished, setMetaPublished] = useState("");
+  const [metaDescription, setMetaDescription] = useState("");
+  const [metaError, setMetaError] = useState("");
+
   // AI suggestions held for review before they touch the saved item.
   const [pendingTags, setPendingTags] = useState<string[]>([]);
   const [pendingNotes, setPendingNotes] = useState<string | null>(null);
@@ -178,6 +187,8 @@ export default function ItemDetail() {
     setPendingTags([]);
     setPendingNotes(null);
     setSourceEdit(false);
+    setMetaEdit(false);
+    setMetaError("");
     const t = setTimeout(() => { ready.current = true; }, 0);
     return () => clearTimeout(t);
   }, [item?.id]);
@@ -295,6 +306,42 @@ export default function ItemDetail() {
       setSourceEdit(false);
     },
   });
+
+  // Metadata edits carry no revision history (revisions track title/notes/tags/
+  // status/progress), so they patch with snapshot=false.
+  const patchMeta = useMutation({
+    mutationFn: (data: ItemPatch) => api.patchItem(itemId, data, { snapshot: false }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["item", itemId] });
+      qc.invalidateQueries({ queryKey: ["items"] });
+      setMetaEdit(false);
+      setMetaError("");
+    },
+  });
+
+  function openMetaEdit() {
+    if (!item) return;
+    setMetaChannel(item.channel);
+    setMetaDuration(fmtDuration(item.duration_sec));
+    setMetaPublished(item.published_at || "");
+    setMetaDescription(item.description);
+    setMetaError("");
+    setMetaEdit(true);
+  }
+
+  function saveMetaEdit() {
+    const duration = parseDuration(metaDuration);
+    if (metaDuration.trim() && duration === null) {
+      setMetaError("Duration must be h:mm:ss, mm:ss or a number of seconds.");
+      return;
+    }
+    patchMeta.mutate({
+      channel: metaChannel.trim(),
+      duration_sec: duration,
+      published_at: metaPublished.trim() || null,
+      description: metaDescription,
+    });
+  }
 
   // Apply a reviewed AI tag suggestion; the pending list never auto-saves.
   function acceptPendingTag(t: string) {
@@ -654,6 +701,105 @@ export default function ItemDetail() {
     </div>
   );
 
+  // Mirrors the backend completeness rule (_REQUIRED_META in routers/items.py):
+  // once none of these is blank the "incomplete" flag retires itself.
+  const requiredMeta = item.kind === "youtube"
+    ? [
+      { label: "title", present: !!item.title },
+      { label: "channel", present: !!item.channel },
+      { label: "duration", present: !!item.duration_sec },
+      { label: "published", present: !!item.published_at },
+    ]
+    : [{ label: "title", present: !!item.title }];
+  const missingMeta = requiredMeta.filter(f => !f.present).map(f => f.label);
+
+  const metaInput = "w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1.5 text-sm outline-none focus:border-zinc-600";
+  const metadataField = item.kind !== "note" && (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs text-zinc-400">metadata</label>
+        {!metaEdit && (
+          <button type="button" onClick={openMetaEdit} className="text-xs text-zinc-500 hover:text-zinc-300">
+            edit
+          </button>
+        )}
+      </div>
+      {metaEdit ? (
+        <div className="flex flex-col gap-2">
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 mb-1 block">channel / author</label>
+            <input
+              autoFocus
+              value={metaChannel}
+              onChange={e => setMetaChannel(e.target.value)}
+              onKeyDown={e => { if (e.key === "Escape") setMetaEdit(false); }}
+              placeholder="who made it"
+              className={metaInput}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] uppercase text-zinc-500 mb-1 block">duration</label>
+              <input
+                value={metaDuration}
+                onChange={e => setMetaDuration(e.target.value)}
+                onKeyDown={e => { if (e.key === "Escape") setMetaEdit(false); }}
+                placeholder="12:34"
+                className={metaInput}
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase text-zinc-500 mb-1 block">published</label>
+              <input
+                type="date"
+                value={metaPublished}
+                onChange={e => setMetaPublished(e.target.value)}
+                onKeyDown={e => { if (e.key === "Escape") setMetaEdit(false); }}
+                className={metaInput}
+              />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase text-zinc-500 mb-1 block">description</label>
+            <textarea
+              value={metaDescription}
+              onChange={e => setMetaDescription(e.target.value)}
+              placeholder="what it is (feeds search and the AI prompts)"
+              className={`${metaInput} resize-y min-h-[5rem] font-mono text-xs`}
+            />
+          </div>
+          {metaError && <span className="text-[10px] text-red-400">{metaError}</span>}
+          <div className="flex gap-2">
+            <button
+              onClick={saveMetaEdit}
+              disabled={patchMeta.isPending}
+              className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 rounded disabled:opacity-50"
+            >
+              {patchMeta.isPending ? "Saving…" : "Save"}
+            </button>
+            <button onClick={() => { setMetaEdit(false); setMetaError(""); }} className="px-3 py-1 text-sm bg-zinc-700 hover:bg-zinc-600 rounded">
+              Cancel
+            </button>
+          </div>
+          <span className="text-[10px] text-zinc-600">Title and image are edited above; everything else here is what the enricher would have filled in.</span>
+        </div>
+      ) : (
+        <dl className="text-xs space-y-0.5">
+          {[
+            ["channel", item.channel],
+            ["duration", fmtDuration(item.duration_sec)],
+            ["published", item.published_at || ""],
+          ].map(([label, value]) => (
+            <div key={label} className="flex gap-2">
+              <dt className="text-zinc-500 w-16 shrink-0">{label}</dt>
+              <dd className={`min-w-0 truncate ${value ? "text-zinc-300" : "text-zinc-600"}`}>{value || "not set"}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+
   const fields = (
     <>
       {sourceField}
@@ -781,9 +927,43 @@ export default function ItemDetail() {
           </div>
         )}
       </div>
+      {metadataField}
       {item.needs_enrichment && (
-        <div className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 rounded p-2">
-          Enrichment failed. Try "Re-fetch metadata" in the ... menu.
+        <div className="text-xs text-amber-300 bg-amber-950/40 border border-amber-900 rounded p-2 space-y-2">
+          <div>
+            {missingMeta.length
+              ? `Metadata is incomplete - still missing ${missingMeta.join(", ")}.`
+              : "Enrichment failed."}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {item.url && (
+              <button
+                type="button"
+                onClick={() => refresh.mutate()}
+                disabled={refresh.isPending}
+                className="px-2 py-1 rounded border border-amber-700 hover:bg-amber-900/40 disabled:opacity-50"
+              >
+                {refresh.isPending ? "Re-fetching…" : "Re-fetch"}
+              </button>
+            )}
+            {!metaEdit && (
+              <button
+                type="button"
+                onClick={openMetaEdit}
+                className="px-2 py-1 rounded border border-amber-700 hover:bg-amber-900/40"
+              >
+                Fill in manually
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => patchMeta.mutate({ needs_enrichment: false })}
+              disabled={patchMeta.isPending}
+              className="px-2 py-1 rounded text-amber-500/80 hover:text-amber-300 disabled:opacity-50"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </>

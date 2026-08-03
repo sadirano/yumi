@@ -30,6 +30,25 @@ def _safe_filename(name: str) -> str:
 
 _MAX_REVISIONS = 50
 
+# Metadata that has to be present before an item counts as fully described,
+# per kind. YouTube gets the strict set because oEmbed - the only source that
+# answers when yt-dlp is refused - carries none of it beyond title/channel.
+_REQUIRED_META = {
+    "youtube": ("title", "channel", "duration_sec", "published_at"),
+}
+_REQUIRED_META_DEFAULT = ("title",)
+
+
+def _metadata_complete(item: Item) -> bool:
+    """True when nothing the enricher would have filled is still missing.
+
+    Used to retire the needs_enrichment flag once the gaps are filled - whether
+    by a later re-fetch or by hand, which is the only route on a host YouTube
+    blocks.
+    """
+    fields = _REQUIRED_META.get(item.kind, _REQUIRED_META_DEFAULT)
+    return all(getattr(item, f) for f in fields)
+
 
 def _snapshot(db: Session, item: Item) -> None:
     """Save a revision of item's current state; skip if identical to the last one."""
@@ -271,6 +290,10 @@ def patch_item(
         set_item_tags(db, item, data.pop("tags") or [])
     for k, v in data.items():
         setattr(item, k, v)
+    # Filling the gaps by hand retires the banner, same as a successful
+    # re-fetch would - unless the caller set the flag itself in this patch.
+    if "needs_enrichment" not in data and item.needs_enrichment and _metadata_complete(item):
+        item.needs_enrichment = False
     item.updated_at = utcnow_iso()
     db.commit()
     db.refresh(item)
@@ -466,7 +489,9 @@ async def refresh_enrichment(item_id: int, db: Session = Depends(get_session)):
     item.thumbnail_url = enr.thumbnail_url or item.thumbnail_url
     item.duration_sec = enr.duration_sec or item.duration_sec
     item.published_at = enr.published_at or item.published_at
-    item.needs_enrichment = enr.needs_enrichment
+    # A partial fetch merged over hand-filled fields can still leave the item
+    # complete, so judge the merged row rather than trusting the fetch alone.
+    item.needs_enrichment = enr.needs_enrichment and not _metadata_complete(item)
     item.updated_at = utcnow_iso()
     db.commit()
     db.refresh(item)

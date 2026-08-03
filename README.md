@@ -28,7 +28,10 @@ Oracle Cloud VM behind a Google login via Cloudflare Access
 **Items**
 - Add any YouTube link, generic URL, local file path, or freeform note.
   Metadata auto-enriches via yt-dlp (YouTube) or OpenGraph/oEmbed (everything
-  else); failures are flagged for one-click re-fetch.
+  else); failures are flagged for one-click re-fetch, or for filling in by hand
+  from the item's `metadata` panel when the host can't fetch it at all (a
+  datacenter IP YouTube refuses). The flag clears itself once nothing is
+  missing.
 - Four statuses (`plan / in-progress / completed / archived`) with per-Space
   display labels; progress/total counters for serialized media (which tags get
   a counter is configurable — Settings → Counter tags).

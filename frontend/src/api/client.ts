@@ -66,6 +66,11 @@ export interface ItemPatch {
   total?: number | null;
   url?: string | null;
   file_path?: string | null;
+  // Enricher-owned metadata, editable by hand when enrichment can't run.
+  channel?: string;
+  duration_sec?: number | null;
+  published_at?: string | null;
+  needs_enrichment?: boolean;
 }
 
 export interface Template {
@@ -218,6 +223,16 @@ export function itemLink(item: Item): string | null {
   if (item.url) return item.url;
   if (item.file_path) return encodeURI("file:///" + item.file_path.replace(/\\/g, "/"));
   return null;
+}
+
+/** Parse a hand-typed duration: "1:02:03", "12:34" or plain seconds.
+ *  Returns null for blank/unparseable input so it round-trips fmtDuration. */
+export function parseDuration(input: string): number | null {
+  const s = input.trim();
+  if (!s) return null;
+  const parts = s.split(":");
+  if (parts.length > 3 || parts.some(p => !/^\d+$/.test(p.trim()))) return null;
+  return parts.reduce((acc, p) => acc * 60 + Number(p), 0);
 }
 
 export function fmtDuration(sec: number | null): string {

@@ -65,6 +65,14 @@ class ItemPatch(BaseModel):
     total: Optional[int] = None
     url: Optional[str] = None
     file_path: Optional[str] = None
+    # Metadata normally written by the enricher, editable by hand for when it
+    # can't run (a host YouTube refuses, a page with no og: tags).
+    channel: Optional[str] = None
+    duration_sec: Optional[int] = Field(None, ge=0)
+    published_at: Optional[str] = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    # Send false to dismiss the "metadata incomplete" banner outright; a patch
+    # that fills in the missing fields clears it on its own.
+    needs_enrichment: Optional[bool] = None
 
 
 class RevisionOut(BaseModel):
