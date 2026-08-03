@@ -64,6 +64,8 @@ YOUTUBE_HOSTS = {
     "music.youtube.com", "youtu.be",
 }
 
+YOUTUBE_OEMBED = "https://www.youtube.com/oembed"
+
 
 @dataclass
 class Enrichment:
@@ -195,12 +197,49 @@ def _ytdlp_metadata(url: str) -> dict | None:
     return _ytdlp_via_lib(url) or _ytdlp_via_exe(url)
 
 
+async def _youtube_oembed(url: str) -> dict | None:
+    """Fetch what YouTube's public oEmbed endpoint carries: title, channel, thumb.
+
+    This is YouTube's own documented endpoint for third-party embeds, needs no
+    auth, and is not subject to the bot challenge that refuses yt-dlp from
+    datacenter IPs — which makes it the one source that still answers there. It
+    has no duration, description or publish date, so callers treat a result as
+    partial rather than a full enrichment.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=settings.enrichment_timeout_sec) as client:
+            r = await client.get(YOUTUBE_OEMBED, params={"url": url, "format": "json"})
+        if r.status_code != 200:
+            # 401/404 here means private, deleted or embedding-disabled.
+            log.warning(f"youtube oembed returned {r.status_code} for {url}")
+            return None
+        return r.json()
+    except Exception as exc:
+        log.warning(f"youtube oembed failed for {url}: {type(exc).__name__}: {exc}")
+        return None
+
+
 async def enrich_youtube(url: str) -> Enrichment:
     loop = asyncio.get_running_loop()
     info = await loop.run_in_executor(None, _ytdlp_metadata, url)
     if not info:
-        log.warning(f"youtube enrichment produced nothing for {url}; item marked needs_enrichment")
-        return Enrichment(kind="youtube", canonical_url=url, needs_enrichment=True)
+        # yt-dlp refused (usually a bot challenge). oEmbed still answers, so take
+        # the subset it carries rather than leaving the item titled with its URL.
+        log.warning(f"yt-dlp produced nothing for {url}; falling back to oembed")
+        oe = await _youtube_oembed(url)
+        if not oe:
+            log.warning(f"youtube enrichment produced nothing for {url}; item marked needs_enrichment")
+            return Enrichment(kind="youtube", canonical_url=url, needs_enrichment=True)
+        return Enrichment(
+            kind="youtube",
+            title=oe.get("title") or "",
+            channel=oe.get("author_name") or "",
+            thumbnail_url=oe.get("thumbnail_url") or None,
+            canonical_url=url,
+            # Partial by construction — no duration/description/published_at — so
+            # the item stays flagged for a later re-fetch that may get through.
+            needs_enrichment=True,
+        )
 
     thumb = info.get("thumbnail")
     if not thumb and info.get("thumbnails"):
