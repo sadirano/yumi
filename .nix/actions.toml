@@ -1,0 +1,13 @@
+[actions]
+
+# backup - called by backup-snapshot with an output directory.
+#
+# yumi's git history is bundled centrally like every other repo, but that
+# misses the part that matters: the favourites live in a SQLite database
+# OUTSIDE the repo, under %LOCALAPPDATA%\sadirano-data\yumi. Nothing in the
+# repo points at it, so nothing central can know to take it.
+#
+# It is also WAL-mode, so copying the file gets whatever was last checkpointed
+# and silently drops the rest. This goes through sqlite's own backup API and
+# produces one consistent file that restores without sidecars.
+backup = 'pwsh -NoProfile -ExecutionPolicy Bypass -File .nix/scripts/backup.ps1 {args}'
