@@ -10,4 +10,4 @@
 # It is also WAL-mode, so copying the file gets whatever was last checkpointed
 # and silently drops the rest. This goes through sqlite's own backup API and
 # produces one consistent file that restores without sidecars.
-backup = 'pwsh -NoProfile -ExecutionPolicy Bypass -File .nix/scripts/backup.ps1 {args}'
+backup = "backup {args}"
